@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { View, Text, Image, StyleSheet, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, Image, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_KEY = '157c8aa1011d8ee27cbdbe624298e4a6';
@@ -15,9 +15,11 @@ interface MovieDetails {
 const DetalhesScreen: React.FC<any> = ({ route }) => {
   const { movieId } = route.params;
   const [movieDetails, setMovieDetails] = useState<MovieDetails | null>(null);
+  const [streamingPlatforms, setStreamingPlatforms] = useState<string[]>([]);
 
   useEffect(() => {
     fetchMovieDetails();
+    fetchStreamingAvailability();
   }, []);
 
   const fetchMovieDetails = async () => {
@@ -35,6 +37,19 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
       setMovieDetails(details);
     } catch (error) {
       console.error('Erro ao buscar os detalhes do filme:', error);
+    }
+  };
+
+  const fetchStreamingAvailability = async () => {
+    try {
+      const response = await axios.get(
+        `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
+      );
+      const streamingData = response.data.results.BR.flatrate;
+      const platforms = streamingData ? streamingData.map((platform: any) => platform.provider_name) : [];
+      setStreamingPlatforms(platforms);
+    } catch (error) {
+      console.error('Erro ao buscar a disponibilidade do filme em plataformas de streaming:', error);
     }
   };
 
@@ -67,16 +82,21 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Image
-        source={{ uri: `https://image.tmdb.org/t/p/w500${movieDetails.poster_path}` }}
-        style={styles.poster}
-      />
-      <Text style={styles.title}>{movieDetails.title}</Text>
-      <Text style={styles.releaseDate}>Lançamento: {movieDetails.release_date}</Text>
-      <Text style={styles.overview}>{movieDetails.overview}</Text>
-      <TouchableOpacity style={styles.addToFavoritesButton} onPress={handleAddToFavorites}>
-        <Text style={styles.addToFavoritesButtonText}>Adicionar aos Favoritos</Text>
-      </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Image
+          source={{ uri: `https://image.tmdb.org/t/p/w500${movieDetails.poster_path}` }}
+          style={styles.poster}
+        />
+        <Text style={styles.title}>{movieDetails.title}</Text>
+        <Text style={styles.releaseDate}>Lançamento: {movieDetails.release_date}</Text>
+        <Text style={styles.overview}>{movieDetails.overview}</Text>
+        <TouchableOpacity style={styles.addToFavoritesButton} onPress={handleAddToFavorites}>
+          <Text style={styles.addToFavoritesButtonText}>Adicionar aos Favoritos</Text>
+        </TouchableOpacity>
+        <Text style={styles.streamingAvailability}>
+          Disponível em: {streamingPlatforms.length > 0 ? streamingPlatforms.join(', ') : 'Nenhuma plataforma de streaming'}
+        </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -84,8 +104,12 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
+  },
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
-    backgroundColor: '#fff', 
+    justifyContent: 'center',
   },
   poster: {
     width: 300,
@@ -120,6 +144,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  streamingAvailability: {
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: 'center',
   },
 });
 

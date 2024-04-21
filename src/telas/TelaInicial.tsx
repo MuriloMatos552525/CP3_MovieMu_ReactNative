@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, View, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, View, ActivityIndicator, StatusBar, RefreshControl } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { useFonts, NanumPenScript_400Regular } from '@expo-google-fonts/nanum-pen-script';
 import { Ionicons } from '@expo/vector-icons';
 
 const API_KEY = '157c8aa1011d8ee27cbdbe624298e4a6';
-
 
 interface RootStackParamList {
   navigate: any;
@@ -17,19 +16,20 @@ interface RootStackParamList {
   Desenvolvedores: undefined;
 }
 
-
 interface Movie {
   id: number;
   poster_path?: string;
   title: string;
-  
 }
 
 const TelaInicial: React.FC = () => {
   const [popularMovies, setPopularMovies] = useState<Movie[]>([]);
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([]);
   const [upcomingMovies, setUpcomingMovies] = useState<Movie[]>([]);
+  const [nowPlayingMovies, setNowPlayingMovies] = useState<Movie[]>([]);
+  const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [fontsLoaded] = useFonts({
     NanumPenScript_400Regular,
   });
@@ -56,6 +56,16 @@ const TelaInicial: React.FC = () => {
         `https://api.themoviedb.org/3/movie/upcoming?api_key=${API_KEY}`
       );
       setUpcomingMovies(upcomingResponse.data.results);
+
+      const nowPlayingResponse = await axios.get(
+        `https://api.themoviedb.org/3/movie/now_playing?api_key=${API_KEY}`
+      );
+      setNowPlayingMovies(nowPlayingResponse.data.results);
+
+      const trendingResponse = await axios.get(
+        `https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}`
+      );
+      setTrendingMovies(trendingResponse.data.results);
 
       setLoading(false);
     } catch (error) {
@@ -84,7 +94,7 @@ const TelaInicial: React.FC = () => {
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {data.map((movie) => (
             <View key={movie.id} style={{ marginRight: 15 }}>
-              {renderMovieItem({ item: movie })} 
+              {renderMovieItem({ item: movie })}
             </View>
           ))}
         </ScrollView>
@@ -95,8 +105,14 @@ const TelaInicial: React.FC = () => {
   );
 
   const handleLogoPress = () => {
-    navigation.navigate('Desenvolvedores', {}); // Passar um objeto vazio como parâmetro
+    navigation.navigate('Desenvolvedores', {});
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchMovies();
+    setRefreshing(false);
+  }, []);
 
   if (!fontsLoaded) {
     return <ActivityIndicator size="large" color="#fff" />;
@@ -104,6 +120,7 @@ const TelaInicial: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor="#000" barStyle="light-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={handleLogoPress} style={styles.logoContainer}>
           <Image source={require("../../assets/logo.png")} style={styles.logo} />
@@ -113,7 +130,9 @@ const TelaInicial: React.FC = () => {
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-      <ScrollView>
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#fff" />
@@ -124,6 +143,9 @@ const TelaInicial: React.FC = () => {
             {renderSection('Filmes Populares', popularMovies)}
             {renderSection('Filmes Mais Bem Avaliados', topRatedMovies)}
             {renderSection('Próximos Lançamentos', upcomingMovies)}
+            {renderSection('Filmes em Exibição Agora', nowPlayingMovies)}
+            {renderSection('Filmes em Tendência', trendingMovies)}
+            {renderSection('Filmes que Estão em Breve', upcomingMovies)}
           </>
         )}
       </ScrollView>
@@ -142,7 +164,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   header: {
-    flexDirection: 'row', 
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
@@ -151,7 +173,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    fontFamily: 'NanumPenScript_400Regular', 
+    fontFamily: 'NanumPenScript_400Regular',
   },
   searchButton: {
     backgroundColor: '#222',
@@ -204,9 +226,9 @@ const styles = StyleSheet.create({
     alignContent: 'center',
   },
   logo: {
-    width: 40, 
-    height: 40, 
-    marginRight: 5, 
+    width: 40,
+    height: 40,
+    marginRight: 5,
   },
 });
 

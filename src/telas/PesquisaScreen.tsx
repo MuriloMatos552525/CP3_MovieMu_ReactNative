@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FlatList, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, TextInput, View } from 'react-native';
+import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, TextInput, View, FlatList } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -137,16 +137,20 @@ const PesquisaScreen: React.FC = () => {
           <Ionicons name="search" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
-      <View style={styles.suggestionsContainer}>
-        <Text style={styles.suggestionsTitle}>Sugestões de Filmes:</Text>
-        {suggestions.map(renderSuggestionItem)}
-      </View>
-      <FlatList
-        data={searchResults}
-        renderItem={renderMovieItem}
-        keyExtractor={(item) => item.id.toString()}
-        horizontal
-      />
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.suggestionsContainer}>
+          <Text style={styles.suggestionsTitle}>Sugestões de Filmes:</Text>
+          {suggestions.map(renderSuggestionItem)}
+        </View>
+        <View style={styles.resultsContainer}>
+          <FlatList
+            data={searchResults}
+            renderItem={renderMovieItem}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal
+          />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -184,6 +188,9 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     marginLeft: 10,
   },
+  scrollView: {
+    flex: 1,
+  },
   suggestionsContainer: {
     marginBottom: 20,
   },
@@ -199,6 +206,9 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 14,
     color: '#fff',
+  },
+  resultsContainer: {
+    marginBottom: 20,
   },
   movieContainer: {
     marginRight: 15,
