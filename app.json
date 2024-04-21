@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "Moviemu-cp2",
-    "slug": "moviemu-cp2",
+    "name": "MovieMu",
+    "slug": "moviemu",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logoCompleta.png", 
+    "icon": "./assets/logoCompleta.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/inicio.png", 
+      "image": "./assets/inicio.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -19,17 +19,17 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logoCompleta.png", 
+        "foregroundImage": "./assets/logoCompleta.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.murilomatos.ProjetoGifPM" 
+      "package": "com.murilomatos.ProjetoGifPM"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "f06d78b4-6a65-487e-baa8-3b1be4bef28b"
+        "projectId": "a191dae5-8917-4f39-8303-02088b76d367"
       }
     },
     "owner": "murilomatos01"
