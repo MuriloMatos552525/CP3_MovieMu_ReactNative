@@ -5,8 +5,9 @@ import TelaInicial from './src/telas/TelaInicial';
 import PesquisaScreen from './src/telas/PesquisaScreen';
 import DetalhesScreen from './src/telas/DetalhesScreen';
 import FavoritosScreen from './src/telas/FavoritosScreen';
-import DesenvolvedoresScreen from './src/telas/DesenvolvedoresScreen'; // Importe DesenvolvedoresScreen
-
+import DesenvolvedoresScreen from './src/telas/DesenvolvedoresScreen';
+import CadastroScreen from './src/telas/CadastroScreen';
+import LoginScreen from './src/telas/LoginScreen';
 
 const Stack = createStackNavigator();
 
@@ -14,6 +15,11 @@ export default function App() {
   return (
     <NavigationContainer>
       <Stack.Navigator>
+        <Stack.Screen 
+          name="Login"
+          component={LoginScreen}
+          options={{ title: 'Login', headerShown: false }} // Remova o cabeçalho da tela de login
+        />
         <Stack.Screen 
           name="TelaInicial"
           component={TelaInicial}
@@ -36,8 +42,13 @@ export default function App() {
         />
         <Stack.Screen 
           name="Desenvolvedores"
-          component={DesenvolvedoresScreen} // Adicione DesenvolvedoresScreen como o componente para a tela de detalhes dos desenvolvedores
-          options={{ title: 'Desenvolvedores' }} // Opcional: defina um título para a tela de detalhes dos desenvolvedores
+          component={DesenvolvedoresScreen}
+          options={{ title: 'Desenvolvedores' }}
+        />
+        <Stack.Screen 
+          name="Cadastro"
+          component={CadastroScreen}
+          options={{ title: 'Cadastro' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
