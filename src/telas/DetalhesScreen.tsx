@@ -48,8 +48,8 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
       const response = await axios.get(
         `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
       );
-      const streamingData = response.data.results.BR.flatrate;
-      const platforms = streamingData ? streamingData.map((platform: any) => platform.provider_name) : [];
+      const streamingData = response.data.results.BR?.flatrate || [];
+      const platforms = streamingData.map((platform: any) => platform.provider_name);
       setStreamingPlatforms(platforms);
     } catch (error) {
       console.error('Erro ao buscar a disponibilidade do filme em plataformas de streaming:', error);
