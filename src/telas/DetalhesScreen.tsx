@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { View, Text, Image, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAuth } from 'firebase/auth';
+import { addFavoriteMovie } from '../services/firebaseActions';
 
 const API_KEY = '157c8aa1011d8ee27cbdbe624298e4a6';
 
@@ -16,6 +17,8 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
   const { movieId } = route.params;
   const [movieDetails, setMovieDetails] = useState<MovieDetails | null>(null);
   const [streamingPlatforms, setStreamingPlatforms] = useState<string[]>([]);
+  const auth = getAuth();
+  const user = auth.currentUser;
 
   useEffect(() => {
     fetchMovieDetails();
@@ -54,18 +57,13 @@ const DetalhesScreen: React.FC<any> = ({ route }) => {
   };
 
   const handleAddToFavorites = async () => {
+    if (!user) {
+      Alert.alert('Erro', 'Você precisa estar logado para adicionar filmes aos favoritos.');
+      return;
+    }
     try {
-      const favoriteMovies = await AsyncStorage.getItem('favoriteMovies');
-      const parsedFavoriteMovies: MovieDetails[] = favoriteMovies ? JSON.parse(favoriteMovies) : [];
-      const isAlreadyFavorite = parsedFavoriteMovies.some((movie: MovieDetails) => movie.title === movieDetails?.title);
-      
-      if (isAlreadyFavorite) {
-        Alert.alert('Aviso', 'Este filme já está nos favoritos.');
-      } else {
-        parsedFavoriteMovies.push(movieDetails);
-        await AsyncStorage.setItem('favoriteMovies', JSON.stringify(parsedFavoriteMovies));
-        Alert.alert('Sucesso', 'O filme foi adicionado aos favoritos.');
-      }
+      await addFavoriteMovie(user.uid, movieDetails);
+      Alert.alert('Sucesso', 'O filme foi adicionado aos favoritos.');
     } catch (error) {
       console.error('Erro ao adicionar filme aos favoritos:', error);
       Alert.alert('Erro', 'Houve um erro ao adicionar o filme aos favoritos. Por favor, tente novamente mais tarde.');
@@ -121,7 +119,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 10,
-    textAlign: 'center', 
+    textAlign: 'center',
   },
   releaseDate: {
     fontSize: 16,
@@ -133,12 +131,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   addToFavoritesButton: {
-    backgroundColor: '#007bff', 
-    padding: 15, 
-    borderRadius: 25, 
-    width: '80%', 
-    alignItems: 'center', 
-    marginBottom: 20, 
+    backgroundColor: '#007bff',
+    padding: 15,
+    borderRadius: 25,
+    width: '80%',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   addToFavoritesButtonText: {
     color: '#fff',

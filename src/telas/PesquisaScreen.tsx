@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, TextInput, View, FlatList } from 'react-native';
+import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, TextInput, View, FlatList, Alert } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,17 +17,12 @@ interface MovieDetails {
   id: number;
   title: string;
   overview: string;
+  poster_path: string;
+  release_date: string;
 }
 
-// Definição de tipos para a navegação
-interface RootStackParamList {
-  goBack(): unknown;
-  navigate: any;
-  TelaInicial: undefined;
-  Detalhes: { movieDetails: MovieDetails }; // Tipando a rota Detalhes
-  Pesquisa: undefined;
-  Favoritos: undefined;
-  Desenvolvedores: undefined;
+interface StreamingProvider {
+  provider_name: string;
 }
 
 const PesquisaScreen: React.FC = () => {
@@ -35,8 +30,7 @@ const PesquisaScreen: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
-  // Tipando a função navigation
-  const navigation = useNavigation<RootStackParamList>(); 
+  const navigation = useNavigation();
 
   useEffect(() => {
     fetchSuggestions();
@@ -61,17 +55,41 @@ const PesquisaScreen: React.FC = () => {
         `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}&language=${LANGUAGE}`
       );
       const data = response.data;
-      return data;
+      return {
+        id: data.id,
+        title: data.title,
+        overview: data.overview,
+        poster_path: data.poster_path,
+        release_date: data.release_date,
+      };
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
-        // Tratar o erro 404
         console.error('Filme não encontrado.');
-        // Exibir uma mensagem de erro para o usuário ou redirecioná-lo
+        Alert.alert('Erro', 'Filme não encontrado.');
       } else {
         console.error('Erro ao buscar os detalhes do filme:', error);
-        // Tratar outros erros
+        Alert.alert('Erro', 'Não foi possível buscar os detalhes do filme.');
       }
       return null;
+    }
+  };
+
+  const fetchStreamingAvailability = async (movieId: number): Promise<StreamingProvider[]> => {
+    try {
+      const response = await axios.get(
+        `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
+      );
+      const streamingData = response.data.results.BR?.flatrate;
+      if (streamingData) {
+        return streamingData.map((provider: any) => ({
+          provider_name: provider.provider_name,
+        }));
+      } else {
+        return [];
+      }
+    } catch (error) {
+      console.error('Erro ao buscar a disponibilidade do filme em plataformas de streaming:', error);
+      return [];
     }
   };
 
@@ -84,13 +102,15 @@ const PesquisaScreen: React.FC = () => {
       setSearchResults(data.results);
     } catch (error) {
       console.error('Erro ao buscar os filmes:', error);
+      Alert.alert('Erro', 'Não foi possível buscar os filmes.');
     }
   };
 
   const handleMoviePress = async (movie: Movie) => {
     const movieDetails = await fetchMovieDetailsById(movie.id);
     if (movieDetails) {
-      navigation.navigate('Detalhes', { movieDetails }); 
+      const streamingProviders = await fetchStreamingAvailability(movie.id);
+      navigation.navigate('Detalhes', { movieDetails, streamingProviders });
     }
   };
 
