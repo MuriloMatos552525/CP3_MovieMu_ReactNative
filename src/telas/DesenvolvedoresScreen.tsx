@@ -1,7 +1,8 @@
+// src/telas/DesenvolvedoresScreen.tsx
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Animated, Image } from 'react-native';
 
-const SobreScreen = () => {
+const DesenvolvedoresScreen = () => {
   const slideAnim = useRef(new Animated.Value(-200)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -45,7 +46,9 @@ const SobreScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Funcionamento do App</Text>
           <Text style={styles.description}>
-            O MovieMu é o seu companheiro ideal para descobrir novos filmes, encontrar informações sobre seus favoritos e acompanhar as últimas novidades do cinema. Com uma interface intuitiva e recursos completos, o MovieMu torna mais fácil do que nunca explorar o mundo do entretenimento cinematográfico.
+            O MovieMu é o seu companheiro ideal para descobrir novos filmes, encontrar informações sobre seus favoritos 
+            e acompanhar as últimas novidades do cinema. Com uma interface intuitiva e recursos completos, o MovieMu 
+            torna mais fácil do que nunca explorar o mundo do entretenimento cinematográfico.
           </Text>
         </View>
       </ScrollView>
@@ -113,4 +116,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default SobreScreen;
+export default DesenvolvedoresScreen;

@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, StyleSheet, Text, ImageBackground } from 'react-native';
+import { 
+  View, 
+  TextInput, 
+  Text, 
+  ImageBackground, 
+  TouchableOpacity, 
+  StyleSheet 
+} from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { getAuth } from '../services/firebaseConfig';
+import { auth } from '../services/firebaseConfig';
+
+// Importe a função que cria/atualiza o doc do usuário
+import { createOrUpdateUserDoc } from '../services/firebaseActions';
 
 const CadastroScreen = () => {
   const [email, setEmail] = useState('');
@@ -11,12 +21,22 @@ const CadastroScreen = () => {
 
   const handleSignUp = async () => {
     try {
-      const auth = getAuth();
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       console.log('Usuário cadastrado com sucesso:', user);
+
+      // === IMPORTANTE ===
+      // Cria o documento do usuário no Firestore para não dar erro de "Perfil não encontrado"
+      await createOrUpdateUserDoc(user.uid, {
+        displayName: '',  // Se quiser usar o email como displayName => user.email || ''
+        photoURL: '',
+        friends: []
+      });
+
       setSuccessMessage("Conta criada com sucesso! Você está pronto para embarcar nesta aventura. Faça login para começar.");
       setErrorMessage('');
+      setEmail('');
+      setPassword('');
     } catch (error) {
       console.error('Erro ao cadastrar usuário:', error);
       setErrorMessage("Ops! Parece que houve um problema. Tente novamente mais tarde.");
@@ -25,14 +45,26 @@ const CadastroScreen = () => {
   };
 
   return (
-    <ImageBackground source={require('../../assets/login.png')} style={styles.backgroundImage}>
+    <ImageBackground 
+      source={require('../../assets/login.png')} 
+      style={styles.backgroundImage}
+      blurRadius={2} // deixa a imagem levemente desfocada para maior contraste
+    >
+      {/* Overlay para dar contraste à imagem */}
+      <View style={styles.overlay} />
+
       <View style={styles.container}>
         <Text style={styles.title}>Cadastro</Text>
+
+        {/* Mensagens de erro/sucesso */}
         {errorMessage ? <Text style={styles.errorMessage}>{errorMessage}</Text> : null}
         {successMessage ? <Text style={styles.successMessage}>{successMessage}</Text> : null}
+
+        {/* Campos de entrada */}
         <TextInput
           style={styles.input}
           placeholder="Email"
+          placeholderTextColor="#ddd"
           onChangeText={(text) => setEmail(text)}
           value={email}
           autoCapitalize="none"
@@ -40,17 +72,33 @@ const CadastroScreen = () => {
         <TextInput
           style={styles.input}
           placeholder="Senha"
+          placeholderTextColor="#ddd"
           onChangeText={(text) => setPassword(text)}
           value={password}
           secureTextEntry
         />
-        <Button title="Cadastrar" onPress={handleSignUp} />
+
+        {/* Botão customizado */}
+        <TouchableOpacity style={styles.button} onPress={handleSignUp}>
+          <Text style={styles.buttonText}>Cadastrar</Text>
+        </TouchableOpacity>
       </View>
     </ImageBackground>
   );
 };
 
+export default CadastroScreen;
+
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    resizeMode: 'cover',
+    justifyContent: 'center',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
   container: {
     flex: 1,
     justifyContent: 'center',
@@ -58,34 +106,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   title: {
-    fontSize: 28,
-    marginBottom: 20,
+    fontSize: 32,
+    marginBottom: 30,
     fontWeight: 'bold',
-    color: '#fff', // Cor do texto do título
+    color: '#fff',
   },
   input: {
-    width: '100%',
-    height: 40,
+    width: '85%',
+    height: 48,
     borderColor: '#fff',
     borderWidth: 1,
-    borderRadius: 5,
-    marginBottom: 10,
-    paddingHorizontal: 10,
-    color: '#fff', // Cor do texto dos campos de entrada
+    borderRadius: 25,
+    marginBottom: 15,
+    paddingHorizontal: 15,
+    color: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  button: {
+    width: '85%',
+    height: 50,
+    backgroundColor: '#f44336',
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   errorMessage: {
-    color: 'red',
+    color: '#ffcccc',
     marginBottom: 10,
+    textAlign: 'center',
   },
   successMessage: {
-    color: 'green',
+    color: '#c8ffc8',
     marginBottom: 10,
-  },
-  backgroundImage: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'center',
+    textAlign: 'center',
   },
 });
-
-export default CadastroScreen;

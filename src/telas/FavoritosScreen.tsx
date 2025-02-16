@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { FlatList, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, View, Alert, TextInput, Button } from 'react-native';
-import { getAuth } from 'firebase/auth';
+import { auth } from '../services/firebaseConfig';
 import { getFavoriteMovies, removeFavoriteMovie, updateFavoriteMovie } from '../services/firebaseActions';
 import { Ionicons } from '@expo/vector-icons';
 
 interface Movie {
-  id: string;
+  id: string; // docId do Firestore
   poster_path?: string;
   title: string;
 }
@@ -15,12 +15,13 @@ const FavoritosScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [editingMovie, setEditingMovie] = useState<Movie | null>(null);
   const [newTitle, setNewTitle] = useState('');
-  const auth = getAuth();
+
   const user = auth.currentUser;
 
   const loadFavoriteMovies = async () => {
     if (!user) {
       Alert.alert('Erro', 'Você precisa estar logado para ver seus filmes favoritos.');
+      setIsLoading(false);
       return;
     }
     try {
@@ -37,7 +38,7 @@ const FavoritosScreen: React.FC = () => {
   const handleRemoveFavoriteMovie = async (docId: string) => {
     try {
       await removeFavoriteMovie(docId);
-      setFavoriteMovies(favoriteMovies.filter((movie) => movie.id !== docId));
+      setFavoriteMovies((prev) => prev.filter((movie) => movie.id !== docId));
       Alert.alert('Sucesso', 'Filme removido dos favoritos.');
     } catch (error) {
       console.error('Erro ao remover filme favorito:', error);
@@ -50,9 +51,11 @@ const FavoritosScreen: React.FC = () => {
 
     try {
       await updateFavoriteMovie(editingMovie.id, { title: newTitle });
-      setFavoriteMovies((prevMovies) => prevMovies.map((movie) =>
-        movie.id === editingMovie.id ? { ...movie, title: newTitle } : movie
-      ));
+      setFavoriteMovies((prevMovies) =>
+        prevMovies.map((movie) =>
+          movie.id === editingMovie.id ? { ...movie, title: newTitle } : movie
+        )
+      );
       setEditingMovie(null);
       setNewTitle('');
       Alert.alert('Sucesso', 'Filme atualizado com sucesso.');
@@ -74,10 +77,12 @@ const FavoritosScreen: React.FC = () => {
       <TouchableOpacity onPress={() => handleRemoveFavoriteMovie(item.id)}>
         <Ionicons name="heart-dislike" size={24} color="#f44336" />
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => {
-        setEditingMovie(item);
-        setNewTitle(item.title);
-      }}>
+      <TouchableOpacity
+        onPress={() => {
+          setEditingMovie(item);
+          setNewTitle(item.title);
+        }}
+      >
         <Ionicons name="create" size={24} color="#000" />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -85,6 +90,7 @@ const FavoritosScreen: React.FC = () => {
 
   useEffect(() => {
     loadFavoriteMovies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

@@ -1,20 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ScrollView, Image, StyleSheet, SafeAreaView, TouchableOpacity, Text, View, ActivityIndicator, StatusBar, RefreshControl } from 'react-native';
+import { 
+  ScrollView, 
+  Image, 
+  StyleSheet, 
+  SafeAreaView, 
+  TouchableOpacity, 
+  Text, 
+  View, 
+  ActivityIndicator, 
+  StatusBar, 
+  RefreshControl 
+} from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { useFonts, NanumPenScript_400Regular } from '@expo-google-fonts/nanum-pen-script';
 import { Ionicons } from '@expo/vector-icons';
 
 const API_KEY = '157c8aa1011d8ee27cbdbe624298e4a6';
-
-interface RootStackParamList {
-  navigate: any;
-  TelaInicial: undefined;
-  Detalhes: { movieId: number };
-  Pesquisa: undefined;
-  Favoritos: undefined;
-  Desenvolvedores: undefined;
-}
 
 interface Movie {
   id: number;
@@ -30,70 +32,67 @@ const TelaInicial: React.FC = () => {
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [fontsLoaded] = useFonts({
-    NanumPenScript_400Regular,
-  });
 
-  const navigation = useNavigation<RootStackParamList>();
+  const [fontsLoaded] = useFonts({ NanumPenScript_400Regular });
+  const navigation = useNavigation();
+
+  const fetchMovies = async () => {
+    try {
+      const [
+        popularResponse, 
+        topRatedResponse, 
+        upcomingResponse, 
+        nowPlayingResponse, 
+        trendingResponse
+      ] = await Promise.all([
+        axios.get(`https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}`),
+        axios.get(`https://api.themoviedb.org/3/movie/top_rated?api_key=${API_KEY}`),
+        axios.get(`https://api.themoviedb.org/3/movie/upcoming?api_key=${API_KEY}`),
+        axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${API_KEY}`),
+        axios.get(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}`)
+      ]);
+      setPopularMovies(popularResponse.data.results);
+      setTopRatedMovies(topRatedResponse.data.results);
+      setUpcomingMovies(upcomingResponse.data.results);
+      setNowPlayingMovies(nowPlayingResponse.data.results);
+      setTrendingMovies(trendingResponse.data.results);
+    } catch (error) {
+      console.error('Erro ao buscar filmes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchMovies();
   }, []);
 
-  const fetchMovies = async () => {
-    try {
-      const popularResponse = await axios.get(
-        `https://api.themoviedb.org/3/movie/popular?api_key=${API_KEY}`
-      );
-      setPopularMovies(popularResponse.data.results);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchMovies();
+    setRefreshing(false);
+  }, []);
 
-      const topRatedResponse = await axios.get(
-        `https://api.themoviedb.org/3/movie/top_rated?api_key=${API_KEY}`
-      );
-      setTopRatedMovies(topRatedResponse.data.results);
-
-      const upcomingResponse = await axios.get(
-        `https://api.themoviedb.org/3/movie/upcoming?api_key=${API_KEY}`
-      );
-      setUpcomingMovies(upcomingResponse.data.results);
-
-      const nowPlayingResponse = await axios.get(
-        `https://api.themoviedb.org/3/movie/now_playing?api_key=${API_KEY}`
-      );
-      setNowPlayingMovies(nowPlayingResponse.data.results);
-
-      const trendingResponse = await axios.get(
-        `https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}`
-      );
-      setTrendingMovies(trendingResponse.data.results);
-
-      setLoading(false);
-    } catch (error) {
-      console.error('Erro ao buscar filmes:', error);
-      setLoading(false);
-    }
-  };
-
-  const handleMoviePress = (movieId: number) => {
+  const handleMoviePress = useCallback((movieId: number) => {
     navigation.navigate('Detalhes', { movieId });
-  };
+  }, [navigation]);
 
-  const renderMovieItem = ({ item }: { item: Movie }) => (
+  const renderMovieItem = useCallback(({ item }: { item: Movie }) => (
     <TouchableOpacity onPress={() => handleMoviePress(item.id)}>
-      <Image
-        source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
+      <Image 
+        source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }} 
         style={styles.poster}
       />
     </TouchableOpacity>
-  );
+  ), [handleMoviePress]);
 
-  const renderSection = (title: string, data: Movie[]) => (
+  const renderSection = useCallback((title: string, data: Movie[]) => (
     <View style={styles.sectionContainer}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {data.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {data.map((movie) => (
-            <View key={movie.id} style={{ marginRight: 15 }}>
+          {data.map(movie => (
+            <View key={movie.id} style={styles.movieItem}>
               {renderMovieItem({ item: movie })}
             </View>
           ))}
@@ -102,20 +101,19 @@ const TelaInicial: React.FC = () => {
         <Text style={styles.emptyMessage}>Nenhum filme disponível no momento</Text>
       )}
     </View>
-  );
+  ), [renderMovieItem]);
 
   const handleLogoPress = () => {
-    navigation.navigate('Desenvolvedores', {});
+    navigation.navigate('Desenvolvedores');
   };
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchMovies();
-    setRefreshing(false);
-  }, []);
-
+  // Se as fontes ainda não carregaram, mostra loading
   if (!fontsLoaded) {
-    return <ActivityIndicator size="large" color="#fff" />;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
   }
 
   return (
@@ -123,15 +121,32 @@ const TelaInicial: React.FC = () => {
       <StatusBar backgroundColor="#000" barStyle="light-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={handleLogoPress} style={styles.logoContainer}>
-          <Image source={require("../../assets/logo.png")} style={styles.logo} />
+          <Image source={require('../../assets/logo.png')} style={styles.logo} />
           <Text style={styles.appName}>MovieMu</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.searchButton} onPress={() => navigation.navigate('Pesquisa', {})}>
-          <Ionicons name="search" size={24} color="#fff" />
-        </TouchableOpacity>
+
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            style={styles.headerIconButton} 
+            onPress={() => navigation.navigate('Pesquisa')}
+          >
+            <Ionicons name="search" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {/* ====== BOTÃO DE PERFIL ====== */}
+          <TouchableOpacity
+            style={styles.headerIconButton}
+            onPress={() => navigation.navigate('Perfil')}
+          >
+            <Ionicons name="person" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
+
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -145,12 +160,18 @@ const TelaInicial: React.FC = () => {
             {renderSection('Próximos Lançamentos', upcomingMovies)}
             {renderSection('Filmes em Exibição Agora', nowPlayingMovies)}
             {renderSection('Filmes em Tendência', trendingMovies)}
+            {/* Caso queira remover duplicação, pode apagar a linha abaixo */}
             {renderSection('Filmes que Estão em Breve', upcomingMovies)}
           </>
         )}
       </ScrollView>
-      <TouchableOpacity style={styles.favoritesButton} onPress={() => navigation.navigate('Favoritos', {})}>
-        <Ionicons name="heart" size={24} color="#fff" />
+
+      {/* Botão fixo para acesso às listas */}
+      <TouchableOpacity 
+        style={styles.listsButton} 
+        onPress={() => navigation.navigate('SharedLists')}
+      >
+        <Ionicons name="list" size={24} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -169,21 +190,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    marginRight: 5,
+  },
   appName: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
     fontFamily: 'NanumPenScript_400Regular',
   },
-  searchButton: {
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerIconButton: {
     backgroundColor: '#222',
     padding: 10,
     borderRadius: 50,
+    marginLeft: 10,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 200,
   },
   loadingText: {
     marginTop: 10,
@@ -198,6 +234,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     color: '#fff',
   },
+  movieItem: {
+    marginRight: 15,
+  },
   poster: {
     width: 150,
     height: 225,
@@ -209,26 +248,16 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: '#fff',
   },
-  favoritesButton: {
+  listsButton: {
     position: 'absolute',
     bottom: 20,
     right: 20,
-    backgroundColor: '#f44336',
+    backgroundColor: '#007bff',
     width: 60,
     height: 60,
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignContent: 'center',
-  },
-  logo: {
-    width: 40,
-    height: 40,
-    marginRight: 5,
   },
 });
 

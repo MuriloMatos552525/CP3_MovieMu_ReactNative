@@ -1,42 +1,37 @@
-import React, { useState } from 'react';
-import { View, TextInput, Button, StyleSheet, Text, ImageBackground, TouchableOpacity } from 'react-native';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { getAuth, GoogleAuthProvider, signInWithPopup, OAuthProvider, signInWithCredential } from '../services/firebaseConfig';
+import React, { useState, useEffect } from 'react';
+import { View, TextInput, StyleSheet, Text, ImageBackground, TouchableOpacity } from 'react-native';
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { auth } from '../services/firebaseConfig';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
-import AntDesign from 'react-native-vector-icons/AntDesign';
+import * as Google from 'expo-auth-session/providers/google';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleGoogleSignIn = async () => {
-    try {
-      const auth = getAuth();
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      navigation.navigate('TelaInicial');
-    } catch (error) {
-      console.error('Erro ao fazer login via Google:', error);
-      setErrorMessage("Algo deu errado. A rebelião falhou. Tente novamente mais tarde.");
-    }
-  };
+  // Configuração do fluxo de autenticação com Google via expo-auth-session
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: '1084439998582-t8gtep17cqi76dfe6hq8idk99lt77ccv.apps.googleusercontent.com', // Substitua pelo seu clientId do Firebase Web
+  });
 
-  const handleAppleSignIn = async () => {
-    try {
-      const auth = getAuth();
-      const provider = new OAuthProvider('apple.com');
-      await signInWithCredential(auth, provider);
-      navigation.navigate('TelaInicial');
-    } catch (error) {
-      console.error('Erro ao fazer login via Apple:', error);
-      setErrorMessage("Os Sith estão bloqueando o acesso. Tente novamente mais tarde.");
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential)
+        .then(() => {
+          navigation.navigate('TelaInicial');
+        })
+        .catch((error) => {
+          console.error('Erro ao fazer login via Google:', error);
+          setErrorMessage("Algo deu errado. A rebelião falhou. Tente novamente mais tarde.");
+        });
     }
-  };
+  }, [response]);
 
   const handleEmailSignIn = async () => {
     try {
-      const auth = getAuth();
       await signInWithEmailAndPassword(auth, email, password);
       navigation.navigate('TelaInicial');
     } catch (error) {
@@ -49,6 +44,11 @@ const LoginScreen = ({ navigation }) => {
         setErrorMessage("O sistema está fora de serviço. Tente novamente mais tarde.");
       }
     }
+  };
+
+  // Inicia o fluxo de autenticação via Google
+  const handleGoogleSignIn = async () => {
+    promptAsync();
   };
 
   return (
@@ -72,23 +72,19 @@ const LoginScreen = ({ navigation }) => {
           value={password}
           secureTextEntry
         />
+
         <TouchableOpacity style={styles.customButton} onPress={handleEmailSignIn}>
           <Text style={styles.customButtonText}>Entrar</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.customButton} onPress={() => navigation.navigate('Cadastro')}>
           <Text style={styles.customButtonText}>Cadastre-se</Text>
         </TouchableOpacity>
+
         <View style={styles.buttonContainer}>
           <FontAwesome.Button
             name="google"
             backgroundColor="transparent"
             onPress={handleGoogleSignIn}
-            style={styles.iconButton}
-          />
-          <AntDesign.Button
-            name="apple1"
-            backgroundColor="transparent"
-            onPress={handleAppleSignIn}
             style={styles.iconButton}
           />
         </View>
@@ -98,6 +94,11 @@ const LoginScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    resizeMode: 'cover',
+    justifyContent: 'center',
+  },
   container: {
     flex: 1,
     justifyContent: 'center',
@@ -110,6 +111,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  errorMessage: {
+    color: 'red',
+    marginBottom: 10,
+  },
   input: {
     width: '100%',
     height: 40,
@@ -118,25 +123,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     marginBottom: 10,
     paddingHorizontal: 10,
-    color: '#fff', // Cor do texto inserido
-  },
-  errorMessage: {
-    color: 'red',
-    marginBottom: 10,
-  },
-  buttonContainer: {
-    flexDirection: 'row', // Dispor os botões horizontalmente
-    justifyContent: 'center', // Centralizar os botões na horizontal
-    marginVertical: 10, // Espaçamento vertical
-  }, 
-  iconButton: {
-    width: 60,
-    justifyContent: 'center', // Largura dos botões
-  },  
-  backgroundImage: {
-    flex: 1,
-    resizeMode: 'cover',
-    justifyContent: 'center',
+    color: '#fff',
   },
   customButton: {
     width: '100%',
@@ -150,6 +137,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fffefe',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+  iconButton: {
+    width: 60,
+    justifyContent: 'center',
   },
 });
 
