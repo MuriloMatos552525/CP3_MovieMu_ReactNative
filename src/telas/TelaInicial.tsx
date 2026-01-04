@@ -9,7 +9,8 @@ import {
   ActivityIndicator, 
   StatusBar, 
   RefreshControl,
-  Dimensions
+  Dimensions,
+  Platform
 } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
@@ -38,8 +39,6 @@ const HomeScreen: React.FC = () => {
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
   
   const [heroMovie, setHeroMovie] = useState<Movie | null>(null);
-  
-  // Dados Sociais
   const [friendsActivity, setFriendsActivity] = useState<any[]>([]);
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -107,10 +106,15 @@ const HomeScreen: React.FC = () => {
           >
               <View style={styles.activityHeader}>
                   <View style={styles.avatarSmall}>
-                      <Text style={styles.avatarText}>{(item.userName || "A").charAt(0)}</Text>
+                      {/* Garante que userName existe antes de tentar charAt */}
+                      <Text style={styles.avatarText}>
+                        {(item.userName && item.userName.length > 0) ? item.userName.charAt(0) : "U"}
+                      </Text>
                   </View>
+                  {/* CORREÇÃO AQUI: Texto aninhado de forma segura */}
                   <Text style={styles.activityText} numberOfLines={1}>
-                      <Text style={{fontWeight:'bold', color:'#fff'}}>{item.userName}</Text>
+                      <Text style={{fontWeight:'bold', color:'#fff'}}>{item.userName || "Amigo"}</Text>
+                      <Text> avaliou</Text>
                   </Text>
               </View>
               
@@ -181,6 +185,7 @@ const HomeScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
         style={{flex: 1}}
+        contentContainerStyle={{paddingBottom: 100}} // Padding bottom extra para scroll
       >
         {/* HERO SECTION */}
         {heroMovie && (
@@ -257,7 +262,6 @@ const HomeScreen: React.FC = () => {
           {renderSection('Em Breve nos Cinemas', upcomingMovies)}
         </View>
 
-        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );

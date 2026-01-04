@@ -19,22 +19,21 @@ import { RootStackParamList } from '../../App';
 const TMDB_API_KEY = "157c8aa1011d8ee27cbdbe624298e4a6";
 
 // --- COMPONENTE INTERNO: CARD DE REVIEW ---
-// Busca os dados do filme (Poster/Titulo) baseado no ID salvo na Review
 const ReviewCard = ({ review, isFriend }: { review: Review, isFriend: boolean }) => {
   const [movieData, setMovieData] = useState<any>(null);
 
   useEffect(() => {
+    let isMounted = true;
     async function fetchMovie() {
       try {
         const res = await axios.get(
           `https://api.themoviedb.org/3/movie/${review.movieId}?api_key=${TMDB_API_KEY}&language=pt-BR`
         );
-        setMovieData(res.data);
-      } catch (e) {
-        // Erro silencioso em lista
-      }
+        if (isMounted) setMovieData(res.data);
+      } catch (e) { }
     }
     fetchMovie();
+    return () => { isMounted = false };
   }, [review.movieId]);
 
   if (!movieData) return <View style={styles.cardSkeleton} />;
@@ -43,19 +42,22 @@ const ReviewCard = ({ review, isFriend }: { review: Review, isFriend: boolean })
     <View style={styles.card}>
         <View style={styles.cardHeader}>
             <View style={{flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1}}>
-                {/* Poster Miniatura */}
+                {/* Poster */}
                 <Image 
                     source={{ uri: `https://image.tmdb.org/t/p/w92${movieData.poster_path}` }} 
                     style={styles.miniPoster} 
                 />
                 <View style={{flex: 1}}>
-                    {/* Nome do Usuário (se for amigo) ou Titulo do Filme */}
-                    {isFriend && (
-                        <Text style={styles.userName}>
-                            {review.userName || "Amigo"} <Text style={styles.actionText}>assistiu</Text>
-                        </Text>
+                    {/* Header: Nome + Ação */}
+                    {isFriend ? (
+                        <View style={{flexDirection:'row', alignItems:'center', flexWrap:'wrap'}}>
+                             <Text style={styles.userName}>{review.userName || "Amigo"}</Text>
+                             <Text style={styles.actionText}> assistiu </Text>
+                             <Text style={styles.movieTitle} numberOfLines={1}>{movieData.title}</Text>
+                        </View>
+                    ) : (
+                        <Text style={styles.movieTitle} numberOfLines={1}>{movieData.title}</Text>
                     )}
-                    <Text style={styles.movieTitle} numberOfLines={1}>{movieData.title}</Text>
                     
                     {/* Estrelas */}
                     <View style={styles.ratingRow}>
@@ -70,9 +72,6 @@ const ReviewCard = ({ review, isFriend }: { review: Review, isFriend: boolean })
                     </View>
                 </View>
             </View>
-            
-            {/* Data (Simulada ou formatada se tiver timestamp) */}
-            <Text style={styles.dateText}>Recente</Text>
         </View>
 
         {/* Comentário */}
@@ -91,7 +90,7 @@ type Props = StackScreenProps<RootStackParamList, 'ReviewsHistory'>;
 const ReviewsHistoryScreen: React.FC<Props> = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState<'mine' | 'friends'>('mine');
   const [myReviews, setMyReviews] = useState<Review[]>([]);
-  const [friendsReviews, setFriendsReviews] = useState<Review[]>([]);
+  const [friendsReviews, setFriendsReviews] = useState<Review[]>([]); // Estado separado
   const [loading, setLoading] = useState(true);
   
   const user = auth.currentUser;
@@ -106,19 +105,27 @@ const ReviewsHistoryScreen: React.FC<Props> = ({ navigation }) => {
     try {
       // 1. Minhas Reviews
       const mine = await getReviewsByUser(user.uid);
-      // Ordena por data (assumindo que o ID ou createdAt sirva, aqui simplificado)
-      setMyReviews(mine.reverse()); 
+      // Ordena por data localmente para garantir
+      const sortedMine = mine.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setMyReviews(sortedMine); 
 
       // 2. Reviews de Amigos
       const friendsList = await getMyFriends(user.uid);
       const friendIds = friendsList.map((f: any) => f.uid);
       
+      console.log("Amigos encontrados IDs:", friendIds); // Debug
+
       if (friendIds.length > 0) {
-          const friendsrevs = await getFriendsLastReviews(friendIds);
-          setFriendsReviews(friendsrevs);
+          // Buscamos reviews desses IDs
+          const friendsData = await getFriendsLastReviews(friendIds);
+          console.log("Reviews de amigos encontradas:", friendsData.length); // Debug
+          setFriendsReviews(friendsData);
+      } else {
+          setFriendsReviews([]);
       }
+
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao carregar histórico:", error);
     } finally {
       setLoading(false);
     }
@@ -171,7 +178,7 @@ const ReviewsHistoryScreen: React.FC<Props> = ({ navigation }) => {
                     <View style={styles.emptyContainer}>
                         <Ionicons name="chatbox-ellipses-outline" size={48} color="#333" />
                         <Text style={styles.emptyText}>
-                            {activeTab === 'mine' ? "Você ainda não avaliou filmes." : "Seus amigos ainda não avaliaram nada."}
+                            {activeTab === 'mine' ? "Você ainda não avaliou filmes." : "Seus amigos ainda não avaliaram nada recente."}
                         </Text>
                     </View>
                 }
@@ -219,10 +226,10 @@ const styles = StyleSheet.create({
   
   miniPoster: { width: 40, height: 60, borderRadius: 6, backgroundColor: '#333' },
   
-  userName: { color: '#FF512F', fontWeight: 'bold', fontSize: 13, marginBottom: 2 },
-  actionText: { color: '#888', fontWeight: 'normal' },
+  userName: { color: '#FF512F', fontWeight: 'bold', fontSize: 14 },
+  actionText: { color: '#888', fontWeight: 'normal', fontSize: 13 },
   
-  movieTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  movieTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', marginTop: 4, gap: 2 },
   
   dateText: { color: '#444', fontSize: 10, fontWeight: '600', marginTop: 4 },

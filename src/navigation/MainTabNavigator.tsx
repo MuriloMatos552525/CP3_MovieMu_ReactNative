@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 // Import das Telas
 import TelaInicial from '../telas/TelaInicial';
+import PesquisaScreen from '../telas/PesquisaScreen'; // <--- IMPORTANTE
 import SharedListsScreen from '../telas/SharedListsScreen';
 import MatchScreen from '../telas/MatchScreen';
 import PerfilScreen from '../telas/PerfilScreen';
@@ -19,28 +20,23 @@ const MainTabNavigator = () => {
         headerShown: false,
         tabBarShowLabel: false,
         
-        // --- ESTILO DA BARRA (PÍLULA) ---
+        // --- ESTILO DA BARRA (PÍLULA FLUTUANTE) ---
         tabBarStyle: {
           position: 'absolute',
           bottom: Platform.OS === 'ios' ? 30 : 20,
           left: 20, 
           right: 20,
-          height: 70, // Altura da Barra
+          height: 70, 
           borderRadius: 35,
-          
-          backgroundColor: 'transparent',
+          backgroundColor: 'transparent', // Transparente pois usamos o Background Customizado
           borderTopWidth: 0,
           elevation: 0,
-          
-          // O SEGREDO DO ALINHAMENTO:
-          alignItems: 'center', // Centraliza verticalmente os botões na barra
+          alignItems: 'center',
           justifyContent: 'center',
-          paddingBottom: 0, // Remove padding nativo
+          paddingBottom: 0,
         },
         
-        // --- ESTILO DO CONTAINER DO BOTÃO ---
         tabBarItemStyle: {
-          // Removemos altura fixa aqui para deixar o alignItems da barra controlar
           padding: 0,
           margin: 0,
         },
@@ -49,7 +45,7 @@ const MainTabNavigator = () => {
         tabBarBackground: () => (
             <View style={styles.glassContainer}>
                 <LinearGradient
-                    colors={['rgba(30, 30, 30, 0.95)', 'rgba(10, 10, 10, 0.98)']}
+                    colors={['rgba(20, 20, 20, 0.95)', 'rgba(0, 0, 0, 0.98)']}
                     style={styles.backgroundGradient}
                 />
             </View>
@@ -62,79 +58,64 @@ const MainTabNavigator = () => {
         component={TelaInicial} 
         options={{
           tabBarIcon: ({ focused }) => (
-            <View style={[
-              styles.tabItemContainer, 
-              focused && styles.activeTabBackground
-            ]}>
-              <Ionicons 
-                name={focused ? "home" : "home-outline"} 
-                size={22} 
-                color={focused ? "#fff" : "#999"} 
-              />
+            <View style={[styles.tabItemContainer, focused && styles.activeTabBackground]}>
+              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={focused ? "#fff" : "#999"} />
               <Text style={[styles.tabLabel, { color: focused ? "#fff" : "#999" }]}>Home</Text>
             </View>
           )
         }}
       />
 
-      {/* 2. LISTAS */}
+      {/* 2. BUSCA (NOVA ABA) */}
+      <Tab.Screen 
+        name="SearchTab" 
+        component={PesquisaScreen} 
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <View style={[styles.tabItemContainer, focused && styles.activeTabBackground]}>
+              <Ionicons name={focused ? "search" : "search-outline"} size={22} color={focused ? "#fff" : "#999"} />
+              <Text style={[styles.tabLabel, { color: focused ? "#fff" : "#999" }]}>Busca</Text>
+            </View>
+          )
+        }}
+      />
+
+      {/* 3. LISTAS */}
       <Tab.Screen 
         name="ListsTab" 
         component={SharedListsScreen} 
         options={{
           tabBarIcon: ({ focused }) => (
-            <View style={[
-              styles.tabItemContainer, 
-              focused && styles.activeTabBackground
-            ]}>
-              <Ionicons 
-                name={focused ? "folder-open" : "folder-open-outline"} 
-                size={22} 
-                color={focused ? "#fff" : "#999"} 
-              />
+            <View style={[styles.tabItemContainer, focused && styles.activeTabBackground]}>
+              <Ionicons name={focused ? "folder-open" : "folder-open-outline"} size={22} color={focused ? "#fff" : "#999"} />
               <Text style={[styles.tabLabel, { color: focused ? "#fff" : "#999" }]}>Listas</Text>
             </View>
           )
         }}
       />
 
-      {/* 3. MATCH */}
+      {/* 4. MATCH */}
       <Tab.Screen 
         name="MatchTab" 
         component={MatchScreen} 
         options={{
           tabBarIcon: ({ focused }) => (
-            <View style={[
-              styles.tabItemContainer, 
-              focused && styles.activeTabBackground
-            ]}>
-               <Ionicons 
-                 name={focused ? "ticket" : "ticket-outline"} 
-                 size={22} 
-                 color={focused ? "#fff" : "#999"}
-                 style={focused ? { transform: [{ rotate: '-15deg' }] } : {}}
-               />
+            <View style={[styles.tabItemContainer, focused && styles.activeTabBackground]}>
+               <Ionicons name={focused ? "ticket" : "ticket-outline"} size={22} color={focused ? "#fff" : "#999"} style={focused ? { transform: [{ rotate: '-15deg' }] } : {}} />
                <Text style={[styles.tabLabel, { color: focused ? "#fff" : "#999" }]}>Match</Text>
             </View>
           )
         }}
       />
 
-      {/* 4. PERFIL */}
+      {/* 5. PERFIL */}
       <Tab.Screen 
         name="ProfileTab" 
         component={PerfilScreen} 
         options={{
           tabBarIcon: ({ focused }) => (
-            <View style={[
-              styles.tabItemContainer, 
-              focused && styles.activeTabBackground
-            ]}>
-              <Ionicons 
-                name={focused ? "person" : "person-outline"} 
-                size={22} 
-                color={focused ? "#fff" : "#999"} 
-              />
+            <View style={[styles.tabItemContainer, focused && styles.activeTabBackground]}>
+              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={focused ? "#fff" : "#999"} />
               <Text style={[styles.tabLabel, { color: focused ? "#fff" : "#999" }]}>Perfil</Text>
             </View>
           )
@@ -145,53 +126,23 @@ const MainTabNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  // Fundo (Vidro)
   glassContainer: {
     flex: 1,
     borderRadius: 35,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15,
   },
-  backgroundGradient: {
-    flex: 1,
-  },
-
-  // ITEM INTERNO (Onde a mágica acontece)
+  backgroundGradient: { flex: 1 },
   tabItemContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56, 
-    width: 65,  
-    borderRadius: 28,
-    gap: 3, 
-    
-    // TRUQUE PARA iOS: 
-    // Se ainda estiverem subindo, usamos este 'top' para forçar o centro.
-    // O valor '16' compensa o alinhamento padrão do React Navigation.
-    ...Platform.select({
-      ios: {
-        top: 16, 
-      },
-      android: {
-        top: 0,
-      }
-    })
+    alignItems: 'center', justifyContent: 'center',
+    height: 56, width: 56, // Reduzi um pouco a largura para caber 5 ícones
+    borderRadius: 28, gap: 3,
+    ...Platform.select({ ios: { top: 16 }, android: { top: 0 } })
   },
-
-  // Highlight
-  activeTabBackground: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-  }
+  activeTabBackground: { backgroundColor: 'rgba(255, 255, 255, 0.15)' },
+  tabLabel: { fontSize: 9, fontWeight: '600' }
 });
 
 export default MainTabNavigator;

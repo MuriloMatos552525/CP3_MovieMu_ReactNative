@@ -1,177 +1,168 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TextInput, Button, FlatList, StyleSheet, Alert } from "react-native";
-import { getReviewsByMovie, addReview, updateReview, deleteReview } from "../services/firebaseActions";
-import { auth } from "../services/firebaseConfig";
-import { StackScreenProps } from "@react-navigation/stack";
+import React, { useState, useEffect } from 'react';
+import { 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, 
+  Image, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback 
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { addReview, updateReview } from '../services/firebaseActions';
+import { auth } from '../services/firebaseConfig';
+import { StackScreenProps } from '@react-navigation/stack';
+import { RootStackParamList } from '../../App';
 
-type ReviewScreenProps = StackScreenProps<{ Review: { movieId: number } }, "Review">;
+type Props = StackScreenProps<RootStackParamList, 'Review'>;
 
-export interface Review {
-  id: string;
-  movieId: number;
-  userId: string;
-  rating: number;
-  comment: string;
-  createdAt?: any;
-  updatedAt?: any;
-}
-
-const ReviewScreen: React.FC<ReviewScreenProps> = ({ route }) => {
-  const { movieId } = route.params;
+const ReviewScreen: React.FC<Props> = ({ route, navigation }) => {
+  const { movieId, movieTitle, moviePoster } = route.params; // Recebemos dados para exibir bonito
   const user = auth.currentUser;
 
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [rating, setRating] = useState<string>("");
-  const [comment, setComment] = useState<string>("");
-  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const loadReviews = useCallback(async () => {
-    try {
-      const data = await getReviewsByMovie(movieId);
-      setReviews(data);
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível carregar as avaliações.");
-    }
-  }, [movieId]);
+  // Aqui você poderia buscar se o usuário JÁ avaliou para editar
+  // Por enquanto, vamos focar no fluxo de "Adicionar"
 
-  useEffect(() => {
-    loadReviews();
-  }, [loadReviews]);
-
-  const handleAddOrUpdateReview = async () => {
+  const handleSubmit = async () => {
     if (!user) {
-      Alert.alert("Erro", "Você precisa estar logado para avaliar.");
+      Alert.alert("Erro", "Você precisa estar logado.");
       return;
     }
-    if (!rating || !comment) {
-      Alert.alert("Atenção", "Por favor, preencha todos os campos.");
+    if (rating === 0) {
+      Alert.alert("Atenção", "Toque nas estrelas para dar uma nota.");
       return;
     }
+
+    setLoading(true);
     try {
-      if (editingReviewId) {
-        await updateReview(editingReviewId, Number(rating), comment);
-        Alert.alert("Sucesso", "Avaliação atualizada.");
-      } else {
-        await addReview(movieId, user.uid, Number(rating), comment);
-        Alert.alert("Sucesso", "Avaliação adicionada.");
-      }
-      setRating("");
-      setComment("");
-      setEditingReviewId(null);
-      loadReviews();
+      // Como não estamos gerenciando edição aqui (pode ser futuro), usamos addReview
+      await addReview(movieId, user.uid, rating, comment);
+      
+      Alert.alert("Sucesso!", "Sua avaliação foi salva.");
+      navigation.goBack();
     } catch (error) {
-      Alert.alert("Erro", "Ocorreu um erro ao salvar a avaliação.");
+      Alert.alert("Erro", "Não foi possível salvar.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEditReview = (review: Review) => {
-    setEditingReviewId(review.id);
-    setRating(review.rating.toString());
-    setComment(review.comment);
+  const renderStars = () => {
+    return (
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity 
+            key={star} 
+            onPress={() => setRating(star)}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name={star <= rating ? "star" : "star-outline"} 
+              size={40} 
+              color={star <= rating ? "#FFD700" : "#666"} 
+              style={styles.starIcon}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   };
-
-  const handleDeleteReview = async (reviewId: string) => {
-    try {
-      await deleteReview(reviewId);
-      Alert.alert("Sucesso", "Avaliação deletada.");
-      loadReviews();
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível deletar a avaliação.");
-    }
-  };
-
-  const renderReviewItem = useCallback(({ item }: { item: Review }) => (
-    <View style={styles.reviewItem}>
-      <Text style={styles.reviewUser}>Usuário: {item.userId}</Text>
-      <Text style={styles.reviewRating}>Nota: {item.rating}</Text>
-      <Text style={styles.reviewComment}>Comentário: {item.comment}</Text>
-      {item.userId === user?.uid && (
-        <View style={styles.reviewButtons}>
-          <Button title="Editar" onPress={() => handleEditReview(item)} />
-          <Button title="Excluir" onPress={() => handleDeleteReview(item.id)} />
-        </View>
-      )}
-    </View>
-  ), [user]);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Avaliações do Filme</Text>
-      <FlatList
-        data={reviews}
-        keyExtractor={(item) => item.id}
-        renderItem={renderReviewItem}
-        ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma avaliação ainda.</Text>}
-      />
-      <View style={styles.form}>
-        <Text style={styles.formTitle}>
-          {editingReviewId ? "Editar Avaliação" : "Adicionar Avaliação"}
-        </Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Nota (1 a 5)"
-          keyboardType="numeric"
-          value={rating}
-          onChangeText={setRating}
-        />
-        <TextInput
-          style={[styles.input, styles.commentInput]}
-          placeholder="Comentário"
-          value={comment}
-          onChangeText={setComment}
-          multiline
-        />
-        <Button
-          title={editingReviewId ? "Atualizar Avaliação" : "Enviar Avaliação"}
-          onPress={handleAddOrUpdateReview}
-        />
-        {editingReviewId && (
-          <Button
-            title="Cancelar"
-            onPress={() => {
-              setEditingReviewId(null);
-              setRating("");
-              setComment("");
-            }}
-          />
-        )}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.container}>
+        <LinearGradient
+            colors={['#1c1c1e', '#000000']}
+            style={styles.background}
+        >
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.content}
+            >
+                {/* Header Modal */}
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()}>
+                        <Text style={styles.cancelText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Avaliar Filme</Text>
+                    <TouchableOpacity onPress={handleSubmit} disabled={loading}>
+                        {loading ? (
+                            <ActivityIndicator color="#FF512F" />
+                        ) : (
+                            <Text style={styles.submitText}>Publicar</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+
+                {/* Info do Filme */}
+                <View style={styles.movieInfo}>
+                    {moviePoster ? (
+                        <Image 
+                            source={{ uri: `https://image.tmdb.org/t/p/w154${moviePoster}` }} 
+                            style={styles.poster} 
+                        />
+                    ) : (
+                        <View style={[styles.poster, {backgroundColor:'#333'}]} />
+                    )}
+                    <Text style={styles.movieTitle}>{movieTitle || "Filme Desconhecido"}</Text>
+                    <Text style={styles.subText}>Toque para classificar</Text>
+                </View>
+
+                {/* Estrelas */}
+                {renderStars()}
+
+                {/* Campo de Texto */}
+                <View style={styles.inputContainer}>
+                    <TextInput 
+                        style={styles.input}
+                        placeholder="Escreva sua opinião (opcional)..."
+                        placeholderTextColor="#666"
+                        multiline
+                        maxLength={500}
+                        value={comment}
+                        onChangeText={setComment}
+                    />
+                    <Text style={styles.charCount}>{comment.length}/500</Text>
+                </View>
+
+            </KeyboardAvoidingView>
+        </LinearGradient>
       </View>
-    </View>
+    </TouchableWithoutFeedback>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  reviewItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+  container: { flex: 1, backgroundColor: '#000' },
+  background: { flex: 1 },
+  content: { flex: 1 },
+
+  header: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+      padding: 20, paddingTop: Platform.OS === 'ios' ? 20 : 40,
+      borderBottomWidth: 1, borderBottomColor: '#1c1c1e'
   },
-  reviewUser: { fontWeight: 'bold' },
-  reviewRating: {},
-  reviewComment: { marginVertical: 4 },
-  reviewButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
+  cancelText: { color: '#FF4444', fontSize: 16 },
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  submitText: { color: '#FF512F', fontSize: 16, fontWeight: 'bold' },
+
+  movieInfo: { alignItems: 'center', marginTop: 30, marginBottom: 20 },
+  poster: { 
+      width: 100, height: 150, borderRadius: 8, marginBottom: 15,
+      borderWidth: 1, borderColor: '#333'
   },
-  emptyText: { textAlign: 'center', marginVertical: 16 },
-  form: {
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#ccc',
-    paddingTop: 16,
+  movieTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center', maxWidth: '80%' },
+  subText: { color: '#666', marginTop: 5, fontSize: 14 },
+
+  starsContainer: { flexDirection: 'row', justifyContent: 'center', marginBottom: 30 },
+  starIcon: { marginHorizontal: 5 },
+
+  inputContainer: {
+      marginHorizontal: 20, backgroundColor: '#1c1c1e', borderRadius: 12, padding: 15,
+      borderWidth: 1, borderColor: '#333'
   },
-  formTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 4,
-    padding: 8,
-    marginBottom: 8,
-  },
-  commentInput: { height: 80 },
+  input: { color: '#fff', fontSize: 16, height: 100, textAlignVertical: 'top' },
+  charCount: { color: '#444', textAlign: 'right', fontSize: 12, marginTop: 5 },
 });
 
 export default ReviewScreen;

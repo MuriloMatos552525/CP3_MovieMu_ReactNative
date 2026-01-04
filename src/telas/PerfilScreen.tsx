@@ -23,7 +23,8 @@ import {
   createOrUpdateUserDoc,
   setTop5Movie, 
   getSharedListsByUser,
-  checkUsernameExists
+  checkUsernameExists,
+  getMyFriends // <--- Importante: Buscar amigos reais
 } from "../services/firebaseActions";
 import axios from "axios";
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,13 +39,13 @@ type Props = StackScreenProps<RootStackParamList, "Perfil">;
 interface UserProfile {
   uid: string;
   fullName?: string;
-  displayName?: string; // Compatibilidade
+  displayName?: string; 
   username?: string;
   email?: string;
   photoURL?: string;
   bio?: string;
   friends?: string[];
-  lastUsernameChange?: any; // Timestamp do Firestore
+  lastUsernameChange?: any; 
   top5?: {
     [pos: number]: {
       id: number;
@@ -60,6 +61,7 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [myLists, setMyLists] = useState<any[]>([]);
+  const [friendsCount, setFriendsCount] = useState(0); // <--- Estado dedicado para contagem
   
   // Estados de Edição (Modal)
   const [showEditModal, setShowEditModal] = useState(false);
@@ -88,10 +90,18 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
 
   const loadData = async (uid: string) => {
     try {
+      // 1. Perfil
       const userData = await getUserProfile(uid);
       setProfile(userData);
+
+      // 2. Listas
       const lists = await getSharedListsByUser(uid);
       setMyLists(lists);
+
+      // 3. Amigos (Busca Real na Subcoleção)
+      const friendsList = await getMyFriends(uid);
+      setFriendsCount(friendsList.length); // <--- Atualiza com o número real
+
     } catch (error) {
       console.error(error);
     } finally {
@@ -115,14 +125,10 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
     setSavingProfile(true);
 
     try {
-      // Validação de Username (Regra dos 3 Meses - Simulação Lógica)
       const currentUsername = profile?.username;
       const newUsername = editUsername.trim().toLowerCase();
       
-      // Se mudou o username, verifica disponibilidade
       if (currentUsername !== newUsername) {
-        // Aqui você verificaria profile.lastUsernameChange no backend
-        // Para este exemplo, vamos permitir a mudança mas salvar a data
         const exists = await checkUsernameExists(newUsername);
         if (exists) {
           Alert.alert("Indisponível", "Este nome de usuário já está em uso.");
@@ -136,7 +142,6 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
         username: newUsername,
         bio: editBio,
         photoURL: editPhoto,
-        // Se mudou o username, atualiza a data
         ...(currentUsername !== newUsername && { lastUsernameChange: new Date() }) 
       });
 
@@ -236,7 +241,6 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.navBtn}>
                 <Ionicons name="chevron-back" size={24} color="#fff" />
             </TouchableOpacity>
-            {/* Ícone de Configuração Rápida */}
             <TouchableOpacity onPress={openEditModal} style={styles.navBtn}>
                 <Ionicons name="settings-outline" size={20} color="#fff" />
             </TouchableOpacity>
@@ -265,7 +269,7 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
                 {/* Estatísticas / Social */}
                 <View style={styles.statsRow}>
                     <TouchableOpacity onPress={() => navigation.navigate('Friends')} style={styles.statItem}>
-                        <Text style={styles.statValue}>{profile?.friends?.length || 0}</Text>
+                        <Text style={styles.statValue}>{friendsCount}</Text> {/* <--- CORRIGIDO AQUI */}
                         <Text style={styles.statLabel}>Amigos</Text>
                     </TouchableOpacity>
                     <View style={styles.statDivider} />
@@ -280,7 +284,6 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
                     <Text style={styles.bioText}>{profile.bio}</Text>
                 ) : null}
 
-                {/* Botão Editar Principal */}
                 <TouchableOpacity style={styles.editProfileBtn} onPress={openEditModal}>
                     <Text style={styles.editProfileText}>Editar Perfil</Text>
                 </TouchableOpacity>
@@ -294,26 +297,23 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
                 </ScrollView>
             </View>
 
-            {/* --- SEÇÃO MENU / CONFIGURAÇÕES (Estilo Ajustes iOS) --- */}
+            {/* --- SEÇÃO MENU / CONFIGURAÇÕES --- */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>MINHA CONTA</Text>
                 <View style={styles.menuList}>
                     
-                    {/* Histórico */}
                     <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('ReviewsHistory')}>
                         <View style={styles.menuIconBox}><Ionicons name="time" size={18} color="#FF512F" /></View>
                         <Text style={styles.menuText}>Histórico de Reviews</Text>
                         <Ionicons name="chevron-forward" size={16} color="#333" />
                     </TouchableOpacity>
 
-                    {/* Listas */}
                     <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('SharedLists')}>
                         <View style={styles.menuIconBox}><Ionicons name="layers" size={18} color="#FF512F" /></View>
                         <Text style={styles.menuText}>Minhas Coleções</Text>
                         <Ionicons name="chevron-forward" size={16} color="#333" />
                     </TouchableOpacity>
 
-                    {/* Email (Info Estática) */}
                     <View style={styles.menuItem}>
                         <View style={styles.menuIconBox}><Ionicons name="mail" size={18} color="#666" /></View>
                         <View style={{flex:1}}>
@@ -323,7 +323,6 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
                         <Ionicons name="lock-closed" size={14} color="#333" />
                     </View>
 
-                    {/* Logout */}
                     <TouchableOpacity style={[styles.menuItem, {borderBottomWidth: 0}]} onPress={() => auth.signOut()}>
                         <View style={styles.menuIconBox}><Ionicons name="log-out" size={18} color="#ff4444" /></View>
                         <Text style={[styles.menuText, {color: '#ff4444'}]}>Sair da Conta</Text>
@@ -336,7 +335,7 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
         </ScrollView>
       </LinearGradient>
 
-      {/* --- MODAL DE EDIÇÃO DE PERFIL --- */}
+      {/* --- MODAL DE EDIÇÃO --- */}
       <Modal visible={showEditModal} animationType="slide" presentationStyle="pageSheet">
           <View style={styles.editModalContainer}>
               <View style={styles.editHeader}>
@@ -350,7 +349,6 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
               </View>
 
               <ScrollView contentContainerStyle={{padding: 20}}>
-                  {/* Foto */}
                   <View style={{alignItems: 'center', marginBottom: 30}}>
                       <Image source={editPhoto ? {uri: editPhoto} : require("../../assets/logo.png")} style={styles.editAvatar} />
                       <Text style={{color: '#FF512F', marginTop: 10, fontSize: 13}}>Alterar Foto (URL)</Text>
@@ -397,7 +395,7 @@ const PerfilScreen: React.FC<Props> = ({ navigation }) => {
           </View>
       </Modal>
 
-      {/* --- MODAL BUSCA FILME (Igual anterior) --- */}
+      {/* --- MODAL BUSCA FILME --- */}
       <Modal visible={showTop5Modal} animationType="fade" transparent onRequestClose={() => setShowTop5Modal(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalPanel}>

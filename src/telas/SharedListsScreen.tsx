@@ -6,7 +6,13 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { auth } from '../services/firebaseConfig';
-import { getSharedListsByUser, joinSharedList, SharedList } from '../services/firebaseActions';
+import { 
+  getSharedListsByUser, 
+  joinSharedList, 
+  deleteSharedList, 
+  leaveSharedList, 
+  SharedList 
+} from '../services/firebaseActions'; // <--- Importe as novas funções aqui
 import { Ionicons } from '@expo/vector-icons';
 import { StackScreenProps } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
@@ -65,9 +71,59 @@ const SharedListsScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  // --- LÓGICA DE APAGAR / SAIR ---
+  const handleDeleteOrLeave = (item: SharedList) => {
+    if (!user) return;
+
+    const isOwner = item.creatorId === user.uid;
+
+    if (isOwner) {
+        Alert.alert(
+            "Excluir Coleção",
+            `Tem certeza que deseja apagar "${item.listName}" para TODOS? Essa ação não pode ser desfeita.`,
+            [
+                { text: "Cancelar", style: "cancel" },
+                { 
+                    text: "Excluir", 
+                    style: "destructive", 
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            await deleteSharedList(item.id);
+                            loadLists();
+                        } catch (e) {
+                            Alert.alert("Erro", "Não foi possível excluir.");
+                        }
+                    }
+                }
+            ]
+        );
+    } else {
+        Alert.alert(
+            "Sair da Coleção",
+            `Deseja sair da lista "${item.listName}"?`,
+            [
+                { text: "Cancelar", style: "cancel" },
+                { 
+                    text: "Sair", 
+                    style: "destructive", 
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            await leaveSharedList(item.id, user.uid);
+                            loadLists();
+                        } catch (e) {
+                            Alert.alert("Erro", "Não foi possível sair.");
+                        }
+                    }
+                }
+            ]
+        );
+    }
+  };
+
   const ListHeader = () => (
     <View style={styles.headerContainer}>
-        {/* Banner Premium */}
         <LinearGradient
             colors={['rgba(255, 81, 47, 0.15)', 'rgba(0,0,0,0)']}
             start={{x: 0, y: 0}} end={{x: 1, y: 1}}
@@ -84,7 +140,6 @@ const SharedListsScreen: React.FC<Props> = ({ navigation }) => {
             </View>
         </LinearGradient>
         
-        {/* Botão Entrar (Glass) */}
         <TouchableOpacity 
             style={styles.joinButtonBlock} 
             activeOpacity={0.7}
@@ -98,32 +153,44 @@ const SharedListsScreen: React.FC<Props> = ({ navigation }) => {
     </View>
   );
 
-  const renderItem = ({ item }: { item: SharedList }) => (
-    <TouchableOpacity 
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => navigation.navigate('SharedListDetail', { listId: item.id, listName: item.listName })}
-    >
-      <View style={styles.cardLeft}>
-          <View style={styles.cardIcon}>
-             <Ionicons 
-                name={item.isShared !== false ? "film" : "lock-closed"} 
-                size={20} 
-                color="#fff" 
-             />
+  const renderItem = ({ item }: { item: SharedList }) => {
+    const isOwner = user && item.creatorId === user.uid;
+
+    return (
+        <TouchableOpacity 
+          style={styles.card}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('SharedListDetail', { listId: item.id, listName: item.listName })}
+        >
+          <View style={styles.cardLeft}>
+              <View style={[styles.cardIcon, isOwner ? {backgroundColor:'rgba(74, 222, 128, 0.1)'} : {}]}>
+                 <Ionicons 
+                    name={item.isShared !== false ? "film" : "lock-closed"} 
+                    size={20} 
+                    color={isOwner ? "#4ade80" : "#fff"} 
+                 />
+              </View>
+              <View>
+                <Text style={styles.listName}>{item.listName}</Text>
+                <View style={styles.metaRow}>
+                    <Text style={styles.participantsText}>
+                    {isOwner ? "Criado por você • " : ""}
+                    {item.participants?.length || 1} membro(s)
+                    </Text>
+                </View>
+              </View>
           </View>
-          <View>
-            <Text style={styles.listName}>{item.listName}</Text>
-            <View style={styles.metaRow}>
-                <Text style={styles.participantsText}>
-                {item.participants?.length || 1} participante(s)
-                </Text>
-            </View>
-          </View>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.2)" />
-    </TouchableOpacity>
-  );
+          
+          {/* BOTÃO DE APAGAR/SAIR */}
+          <TouchableOpacity 
+            style={styles.deleteBtn}
+            onPress={() => handleDeleteOrLeave(item)}
+          >
+             <Ionicons name="trash-outline" size={20} color="#666" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      );
+  };
 
   return (
     <View style={styles.container}>
@@ -135,7 +202,7 @@ const SharedListsScreen: React.FC<Props> = ({ navigation }) => {
       >
         <View style={styles.topBar}>
            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
+              <Ionicons name="chevron-back" size={24} color="#fff" />
            </TouchableOpacity>
            <Text style={styles.screenTitle}>Minhas Listas</Text>
            <TouchableOpacity 
@@ -255,13 +322,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(28,28,30,0.6)', padding: 16, borderRadius: 16, marginBottom: 12,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
   },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 15 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 15, flex: 1 },
   cardIcon: {
       width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)',
       justifyContent: 'center', alignItems: 'center'
   },
   listName: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 2 },
   participantsText: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  
+  deleteBtn: { padding: 10 },
 
   emptyContainer: { alignItems: 'center', marginTop: 50 },
   emptyText: { color: '#666', marginTop: 15 },

@@ -17,9 +17,9 @@ import {
   arrayUnion,
   arrayRemove
 } from "firebase/firestore";
-import { db } from "./firebaseConfig";
+import { db, auth } from "./firebaseConfig"; // Added 'auth' here
 
-/** * ==========================================
+/** ==========================================
  * DATA TYPES (INTERFACES)
  * ==========================================
  */
@@ -58,6 +58,7 @@ export interface SharedMovie {
   addedAt?: any;
   watched?: boolean;
   watchedAt?: any;
+  isMatch?: boolean; // New field to identify Match
 }
 
 // Full User Profile
@@ -82,7 +83,19 @@ export interface UserProfile {
   updatedAt?: any;
 }
 
-/** * ==========================================
+// --- NEW: Match Interfaces ---
+export interface MatchSession {
+  id: string;
+  listId: string;
+  isActive: boolean;
+  filters?: {
+    genreId?: string;
+  };
+  createdBy: string;
+  createdAt?: any;
+}
+
+/** ==========================================
  * USER MANAGEMENT (AUTH & PROFILE)
  * ==========================================
  */
@@ -114,8 +127,8 @@ export const createUserInFirestore = async (uid: string, data: {
       fullName: data.fullName,
       displayName: data.fullName,
       photoURL: null,
-      bio: "New to MovieMu",
-      friends: [],
+      bio: "Novo no MovieMu",
+      friends: [], 
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -155,7 +168,7 @@ export const createOrUpdateUserDoc = async (userId: string, data: Partial<UserPr
   }
 };
 
-/** * ==========================================
+/** ==========================================
  * FRIEND SYSTEM (REQUESTS & ACCEPTANCE)
  * ==========================================
  */
@@ -175,6 +188,24 @@ export const searchUserByUsername = async (queryText: string) => {
     return { uid: userDoc.id, ...userDoc.data() };
   } catch (error) {
     console.error("Error searching user by username:", error);
+    throw error;
+  }
+};
+
+// 1b. Search user by EMAIL (Alternative)
+export const searchUserByEmail = async (email: string) => {
+  try {
+    const term = email.toLowerCase().trim();
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where("email", "==", term));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return null;
+    
+    const userDoc = querySnapshot.docs[0];
+    return { uid: userDoc.id, ...userDoc.data() };
+  } catch (error) {
+    console.error("Error searching by email:", error);
     throw error;
   }
 };
@@ -280,15 +311,29 @@ export const getMyFriends = async (userId: string) => {
 export const removeFriend = async (currentUserId: string, friendId: string) => {
   try {
     await deleteDoc(doc(db, "users", currentUserId, "friends", friendId));
-    // Optional: Remove me from his friends too (if you want symmetric friendship)
-    // await deleteDoc(doc(db, "users", friendId, "friends", currentUserId));
   } catch (error) {
     console.error("Error removing friend:", error);
     throw error;
   }
 };
 
-/** * ==========================================
+// Legacy function to add directly (for internal use or debug)
+export const addFriend = async (currentUserId: string, friendId: string, friendData: any) => {
+  try {
+    await setDoc(doc(db, "users", currentUserId, "friends", friendId), {
+      uid: friendId,
+      displayName: friendData.displayName || friendData.fullName || "User",
+      username: friendData.username,
+      photoURL: friendData.photoURL || null,
+      addedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Error addFriend:", error);
+    throw error;
+  }
+};
+
+/** ==========================================
  * SHARED & PRIVATE LISTS
  * ==========================================
  */
@@ -374,7 +419,7 @@ export const addFriendsToSharedList = async (listId: string, friendIds: string[]
 export const addMovieToSharedList = async (
   listId: string,
   userId: string,
-  movie: { title: string; poster_path?: string; tmdbId?: number }
+  movie: { title: string; poster_path?: string; tmdbId?: number; isMatch?: boolean }
 ): Promise<string> => {
   try {
     const listRef = doc(db, "sharedLists", listId);
@@ -383,10 +428,13 @@ export const addMovieToSharedList = async (
     
     const listData = listSnap.data() as SharedList;
     
-    // Permission: Creator OR (Allowed && Participant)
+    // Permission: Creator OR (Allowed && Participant) OR (If Automatic Match)
+    const isParticipant = listData.participants.includes(userId);
+    
     if (
       userId === listData.creatorId ||
-      (listData.allowOthersToAdd && listData.participants.includes(userId))
+      (listData.allowOthersToAdd && isParticipant) || 
+      movie.isMatch // If it's a match, allow adding
     ) {
       const moviesCollectionRef = collection(listRef, "movies");
       const movieDoc = await addDoc(moviesCollectionRef, {
@@ -417,7 +465,7 @@ export const getMoviesFromSharedList = async (listId: string): Promise<SharedMov
     });
     return movies;
   } catch (error) {
-    console.error("Error fetching movies:", error);
+    console.error("Error fetching movies from list:", error);
     throw error;
   }
 };
@@ -449,7 +497,7 @@ export const markMovieAsWatchedInSharedList = async (listId: string, movieId: st
   }
 };
 
-/** * ==========================================
+/** ==========================================
  * TOP 5 & FAVORITES
  * ==========================================
  */
@@ -509,7 +557,7 @@ export const removeFavoriteMovie = async (docId: string) => {
   }
 };
 
-/** * ==========================================
+/** ==========================================
  * REVIEWS (SOCIAL FEED)
  * ==========================================
  */
@@ -521,7 +569,6 @@ export const addReview = async (movieId: number, userId: string, rating: number,
     const userSnap = await getDoc(userDocRef);
     const userData = userSnap.exists() ? userSnap.data() : {};
     
-    // Fallback to "User" if no name set
     const userName = userData.displayName || userData.fullName || "User";
     const userPhoto = userData.photoURL || null;
 
@@ -529,8 +576,8 @@ export const addReview = async (movieId: number, userId: string, rating: number,
     const reviewRef = await addDoc(collection(db, "reviews"), {
       movieId,
       userId,
-      userName, // Important for display
-      userPhoto, // Important for display
+      userName, 
+      userPhoto, 
       rating,
       comment,
       createdAt: serverTimestamp(),
@@ -606,18 +653,153 @@ export const getFriendsLastReviews = async (friendIds: string[]): Promise<Review
     // For MVP, we take the first 10. For production, you'd need multiple queries or a feed system.
     const q = query(
       collection(db, "reviews"),
-      where("userId", "in", friendIds.slice(0, 10)),
-      orderBy("createdAt", "desc"),
-      limit(20)
+      where("userId", "in", friendIds.slice(0, 10))
     );
     const querySnapshot = await getDocs(q);
     const friendReviews: Review[] = [];
     querySnapshot.forEach((docSnap) => {
       friendReviews.push({ id: docSnap.id, ...docSnap.data() } as Review);
     });
-    return friendReviews;
+
+    // Ordenação no Cliente (para evitar erros de índice composto no início)
+    return friendReviews.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA; // Mais recente primeiro
+    });
+
   } catch (error) {
     console.error("Error fetching friend reviews:", error);
+    return []; // Returns empty to avoid breaking screen
+  }
+};
+
+/** ==========================================
+ * MATCH SYSTEM (LOGIC)
+ * ==========================================
+ */
+
+// 1. Create or Retrieve Match Session
+export const getOrCreateMatchSession = async (listId: string, genreId?: string) => {
+  try {
+    // Check if there is already an active session for this list
+    const q = query(
+        collection(db, "sharedLists", listId, "matchSessions"),
+        where("isActive", "==", true),
+        limit(1)
+    );
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+        const docSnap = snap.docs[0];
+        return { id: docSnap.id, ...docSnap.data() } as MatchSession;
+    }
+
+    // If not, create a new one
+    const newSessionRef = await addDoc(collection(db, "sharedLists", listId, "matchSessions"), {
+        listId,
+        isActive: true,
+        filters: genreId ? { genreId } : {},
+        createdBy: auth.currentUser?.uid,
+        createdAt: serverTimestamp()
+    });
+
+    return { id: newSessionRef.id, listId, isActive: true, filters: genreId ? { genreId } : {} };
+
+  } catch (error) {
+    console.error("Error managing match session:", error);
     throw error;
   }
+};
+
+// 2. Vote on Movie (Swipe) + Check Match
+export const voteMovie = async (
+    listId: string, 
+    sessionId: string, 
+    movie: any, 
+    direction: 'left' | 'right'
+) => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+
+    try {
+        // A. Save vote in 'swipes' subcollection
+        // Use composite ID (movieId_userId) to avoid duplicate votes
+        const voteId = `${movie.id}_${userId}`;
+        const swipeRef = doc(db, "sharedLists", listId, "matchSessions", sessionId, "swipes", voteId);
+        
+        await setDoc(swipeRef, {
+            movieId: movie.id,
+            userId: userId,
+            direction: direction,
+            title: movie.title, // Backup info
+            poster_path: movie.poster_path, // Backup info
+            timestamp: serverTimestamp()
+        });
+
+        // B. If LIKE ('right'), check for Match
+        if (direction === 'right') {
+            await checkAndProcessMatch(listId, sessionId, movie);
+        }
+
+    } catch (error) {
+        console.error("Error voting:", error);
+    }
+};
+
+// 3. Internal Match Checking Logic
+const checkAndProcessMatch = async (listId: string, sessionId: string, movie: any) => {
+    try {
+        // 1. How many participants in the list?
+        const listRef = doc(db, "sharedLists", listId);
+        const listSnap = await getDoc(listRef);
+        if (!listSnap.exists()) return;
+        
+        const participants = listSnap.data().participants || [];
+        const totalParticipants = participants.length;
+
+        // 2. How many likes for this movie IN THIS SESSION?
+        const swipesRef = collection(db, "sharedLists", listId, "matchSessions", sessionId, "swipes");
+        const qLikes = query(
+            swipesRef, 
+            where("movieId", "==", movie.id),
+            where("direction", "==", "right")
+        );
+        const likesSnap = await getDocs(qLikes);
+        const totalLikes = likesSnap.size;
+
+        // 3. If Likes >= Participants -> IT'S A MATCH!
+        if (totalLikes >= totalParticipants) {
+            console.log(`IT'S A MATCH! Movie: ${movie.title}`);
+            
+            // Automatically add movie to main list with highlight
+            await addMovieToSharedList(listId, "SYSTEM_MATCH", {
+                title: movie.title,
+                poster_path: movie.poster_path,
+                tmdbId: movie.id,
+                isMatch: true // Special flag
+            });
+
+            // (Optional) We could notify users here via Cloud Functions
+        }
+
+    } catch (error) {
+        console.error("Error checking match:", error);
+    }
+};
+
+// 4. Get Swiped Movies (to avoid showing again)
+export const getSwipedMovieIds = async (listId: string, sessionId: string) => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return [];
+
+    try {
+        const swipesRef = collection(db, "sharedLists", listId, "matchSessions", sessionId, "swipes");
+        const q = query(swipesRef, where("userId", "==", userId));
+        const snap = await getDocs(q);
+        
+        return snap.docs.map(doc => doc.data().movieId);
+    } catch (error) {
+        return [];
+    }
 };
