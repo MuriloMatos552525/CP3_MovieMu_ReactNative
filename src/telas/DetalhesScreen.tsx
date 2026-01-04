@@ -2,34 +2,48 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
-  ScrollView,
   ActivityIndicator,
   StatusBar,
   Linking,
+  Dimensions,
+  Image,
+  Platform
 } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../services/firebaseConfig';
 import { getReviewsByMovie, Review } from '../services/firebaseActions';
 import { StackScreenProps } from '@react-navigation/stack';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { 
+  useAnimatedScrollHandler, 
+  useSharedValue, 
+  useAnimatedStyle, 
+  interpolate, 
+  Extrapolation 
+} from 'react-native-reanimated';
 
+const { width, height } = Dimensions.get('window');
 const API_KEY = '157c8aa1011d8ee27cbdbe624298e4a6';
 
-type DetalhesScreenProps = StackScreenProps<
-  { Detalhes: { movieId: number }; Review: { movieId: number } },
-  'Detalhes'
->;
+type RootStackParamList = {
+  Detalhes: { movieId: number };
+  Review: { movieId: number; movieTitle: string; moviePoster: string };
+};
+
+type Props = StackScreenProps<RootStackParamList, 'Detalhes'>;
 
 interface MovieDetails {
   title: string;
   overview: string;
   poster_path: string;
+  backdrop_path?: string;
   release_date: string;
+  vote_average?: number;
+  genres?: { id: number; name: string }[];
+  runtime?: number;
 }
 
 interface StreamingProvider {
@@ -38,340 +52,451 @@ interface StreamingProvider {
   logo_path: string;
 }
 
-const DetalhesScreen: React.FC<DetalhesScreenProps> = ({ route, navigation }) => {
+const DetalhesScreen: React.FC<Props> = ({ route, navigation }) => {
   const { movieId } = route.params;
+  
   const [movieDetails, setMovieDetails] = useState<MovieDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-
-  // Estado para armazenar reviews do filme
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState<boolean>(true);
-
-  // Estado para streaming
   const [streamingProviders, setStreamingProviders] = useState<StreamingProvider[]>([]);
   const [streamingLink, setStreamingLink] = useState<string | null>(null);
 
-  // Remove o header nativo
+  const scrollY = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
-  // Busca detalhes do filme (API TMDb)
-  const fetchMovieDetails = useCallback(async () => {
-    try {
-      const response = await axios.get(
-        `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}`
-      );
-      const data = response.data;
-      const details: MovieDetails = {
-        title: data.title,
-        overview: data.overview,
-        poster_path: data.poster_path,
-        release_date: data.release_date,
-      };
-      setMovieDetails(details);
-    } catch (error) {
-      console.error('Erro ao buscar os detalhes do filme:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os detalhes do filme.');
-    }
-  }, [movieId]);
-
-  // Busca disponibilidade de streaming (API TMDb)
-  const fetchStreamingAvailability = useCallback(async () => {
-    try {
-      const response = await axios.get(
-        `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
-      );
-      const dataBR = response.data.results.BR;
-      if (dataBR) {
-        setStreamingLink(dataBR.link);
-        const providers = dataBR.flatrate || [];
-        setStreamingProviders(providers);
-      } else {
-        setStreamingProviders([]);
-        setStreamingLink(null);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar a disponibilidade:', error);
-      // Trata o erro de forma silenciosa
-    }
-  }, [movieId]);
-
-  // Busca reviews do Firestore
-  const fetchMovieReviews = useCallback(async () => {
-    try {
-      setReviewsLoading(true);
-      const data = await getReviewsByMovie(movieId);
-      setReviews(data);
-    } catch (error) {
-      console.error('Erro ao buscar reviews do filme:', error);
-    } finally {
-      setReviewsLoading(false);
-    }
-  }, [movieId]);
-
-  // Carrega informações do filme, streaming e reviews
+  // Carrega dados toda vez que a tela ganha foco (para atualizar reviews novas)
   useEffect(() => {
-    Promise.all([
-      fetchMovieDetails(),
-      fetchStreamingAvailability(),
-      fetchMovieReviews(),
-    ]).finally(() => {
-      setLoading(false);
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchData();
     });
-  }, [fetchMovieDetails, fetchStreamingAvailability, fetchMovieReviews]);
+    return unsubscribe;
+  }, [navigation]);
 
-  // Navegar para a tela de Review
-  const handleOpenReviewScreen = () => {
-    navigation.navigate('Review', { movieId });
+  const fetchData = useCallback(async () => {
+    try {
+      // 1. Detalhes do Filme
+      if (!movieDetails) { // Só busca detalhes se não tiver ainda
+          const detailsRes = await axios.get(
+            `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}&language=pt-BR`
+          );
+          setMovieDetails(detailsRes.data);
+
+          const streamRes = await axios.get(
+            `https://api.themoviedb.org/3/movie/${movieId}/watch/providers?api_key=${API_KEY}`
+          );
+          const brData = streamRes.data.results?.BR;
+          if (brData) {
+            setStreamingLink(brData.link);
+            setStreamingProviders(brData.flatrate || brData.buy || []);
+          }
+      }
+
+      // 2. Reviews (Sempre atualiza)
+      setReviewsLoading(true);
+      const reviewsData = await getReviewsByMovie(movieId);
+      setReviews(reviewsData);
+      setReviewsLoading(false);
+
+    } catch (error) {
+      console.error('Erro:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [movieId, movieDetails]);
+
+  // Parallax Sóbrio
+  const imageAnimatedStyle = useAnimatedStyle(() => {
+    const translateY = interpolate(
+      scrollY.value,
+      [-height, 0, height],
+      [-height / 2, 0, height * 0.5],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      scrollY.value,
+      [-height, 0],
+      [1.5, 1], // Zoom suave
+      Extrapolation.CLAMP
+    );
+    return {
+      transform: [{ translateY }, { scale }],
+    };
+  });
+
+  const handleOpenReview = () => {
+    if (movieDetails) {
+      // @ts-ignore
+      navigation.navigate('Review', { 
+        movieId, 
+        movieTitle: movieDetails.title,
+        moviePoster: movieDetails.poster_path 
+      });
+    }
   };
 
-  // Função para tentar abrir o app nativo do provedor
-  const handleProviderPress = async (provider: StreamingProvider) => {
-    // Mapeamento dos nomes dos provedores para esquemas de deep link
-    const deepLinkMapping: { [key: string]: string } = {
-      Netflix: 'nflx://',
-      'Amazon Prime Video': 'primevideo://',
-      'Disney+': 'disneyplus://',
-      'HBO Max': 'hbomax://',
-      // Adicione outros mapeamentos conforme necessário
-    };
-
-    const deepLink = deepLinkMapping[provider.provider_name];
-    if (deepLink) {
-      const supported = await Linking.canOpenURL(deepLink);
-      if (supported) {
-        Linking.openURL(deepLink);
-        return;
-      }
-    }
-    // Se não houver deep link ou o app não estiver instalado, abre o link padrão
-    if (streamingLink) {
-      Linking.openURL(streamingLink);
-    } else {
-      Alert.alert('Indisponível', 'Link para assistir indisponível');
-    }
+  const handleProviderPress = async (link: string | null) => {
+    if (link) Linking.openURL(link);
+    else if (streamingLink) Linking.openURL(streamingLink);
+    else Alert.alert("Indisponível", "Link não encontrado.");
   };
 
   if (loading || !movieDetails) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#fff" />
-        <Text style={styles.loadingText}>Carregando...</Text>
       </View>
     );
   }
 
+  const heroImage = movieDetails.backdrop_path || movieDetails.poster_path;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#222" barStyle="light-content" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-      {/* Header customizado com botão de voltar */}
-      <View style={styles.customHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={28} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {/* Imagem Parallax */}
+      <Animated.Image
+        source={{ uri: `https://image.tmdb.org/t/p/original${heroImage}` }}
+        style={[styles.heroImage, imageAnimatedStyle]}
+        resizeMode="cover"
+      />
+      
+      {/* Gradiente Preto para leitura perfeita */}
+      <LinearGradient
+        colors={['transparent', '#000000']}
+        style={styles.heroGradient}
+        locations={[0, 0.8]}
+      />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Image
-          source={{ uri: `https://image.tmdb.org/t/p/w500${movieDetails.poster_path}` }}
-          style={styles.poster}
-        />
-        <Text style={styles.title}>{movieDetails.title}</Text>
-        <Text style={styles.releaseDate}>
-          Lançamento: {movieDetails.release_date}
-        </Text>
-        <Text style={styles.overview}>{movieDetails.overview}</Text>
+      {/* Botão Voltar (Estilo Apple: Círculo Fosco) */}
+      <TouchableOpacity 
+        style={styles.backButton} 
+        onPress={() => navigation.goBack()}
+      >
+        <Ionicons name="chevron-back" size={24} color="#fff" />
+      </TouchableOpacity>
 
-        {/* Seção de Streaming */}
-        <View style={styles.streamingSection}>
-          <Text style={styles.streamingTitle}>Disponível em:</Text>
-          {streamingProviders.length > 0 ? (
-            <View style={styles.providersContainer}>
-              {streamingProviders.map((provider) => (
-                <TouchableOpacity
-                  key={provider.provider_id}
-                  style={styles.providerButton}
-                  onPress={() => handleProviderPress(provider)}
-                >
-                  {provider.logo_path ? (
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Espaço para a imagem aparecer */}
+        <View style={{ height: 400 }} />
+
+        {/* Conteúdo Sóbrio */}
+        <View style={styles.infoContainer}>
+          
+          <Text style={styles.title}>{movieDetails.title}</Text>
+          
+          <View style={styles.metaRow}>
+             <View style={styles.matchBadge}>
+                <Text style={styles.matchText}>{Math.round((movieDetails.vote_average || 0) * 10)}% Relevância</Text>
+             </View>
+             <Text style={styles.metaText}>{movieDetails.release_date.split('-')[0]}</Text>
+             {movieDetails.runtime && <Text style={styles.metaText}>{Math.floor(movieDetails.runtime / 60)}h {movieDetails.runtime % 60}m</Text>}
+             <View style={styles.hdBadge}>
+                 <Text style={styles.hdText}>HD</Text>
+             </View>
+          </View>
+
+          {/* Botão Principal de Ação (Estilo Play/Avaliar) */}
+          <TouchableOpacity 
+            style={styles.mainActionButton}
+            onPress={handleOpenReview}
+          >
+            <Ionicons name="star" size={20} color="#000" />
+            <Text style={styles.mainActionText}>Avaliar Filme</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.overviewText}>
+            {movieDetails.overview || "Sinopse indisponível."}
+          </Text>
+
+          {/* Gêneros Minimalistas */}
+          <View style={styles.genresRow}>
+            {movieDetails.genres?.map(g => (
+              <Text key={g.id} style={styles.genreText}>
+                {g.name} <Text style={{color: '#444'}}>•</Text>
+              </Text>
+            ))}
+          </View>
+
+          {/* Onde Assistir */}
+          <View style={styles.sectionMargin}>
+            <Text style={styles.sectionTitle}>Disponível em</Text>
+            {streamingProviders.length > 0 ? (
+              <View style={styles.providersRow}>
+                {streamingProviders.map((prov) => (
+                  <TouchableOpacity 
+                    key={prov.provider_id} 
+                    onPress={() => handleProviderPress(null)}
+                    style={styles.providerItem}
+                  >
                     <Image 
-                      source={{ uri: `https://image.tmdb.org/t/p/w92${provider.logo_path}` }}
+                      source={{ uri: `https://image.tmdb.org/t/p/w92${prov.logo_path}` }}
                       style={styles.providerLogo}
                     />
-                  ) : (
-                    <Text style={styles.providerName}>{provider.provider_name}</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.noProvidersText}>Nenhuma plataforma de streaming disponível.</Text>
-          )}
-        </View>
-
-        {/* Seção de Reviews */}
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewSectionTitle}>Avaliações do Filme</Text>
-          {reviewsLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : reviews.length === 0 ? (
-            <Text style={styles.noReviewsText}>Nenhuma avaliação cadastrada ainda.</Text>
-          ) : (
-            reviews.map((review) => (
-              <View key={review.id} style={styles.reviewItem}>
-                <Text style={styles.reviewRating}>Nota: {review.rating} / 5</Text>
-                <Text style={styles.reviewComment}>{review.comment}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            ))
-          )}
-        </View>
-      </ScrollView>
+            ) : (
+              <Text style={styles.emptyText}>Indisponível para streaming.</Text>
+            )}
+          </View>
 
-      {/* Botão fixo para Avaliação */}
-      <TouchableOpacity style={styles.reviewButtonFixed} onPress={handleOpenReviewScreen}>
-        <Ionicons name="create" size={24} color="#fff" />
-      </TouchableOpacity>
-    </SafeAreaView>
+          {/* Reviews (Lista Limpa) */}
+          <View style={styles.sectionMargin}>
+             <Text style={styles.sectionTitle}>Opinião da Crítica</Text>
+             
+             {reviewsLoading ? (
+                <ActivityIndicator color="#fff" />
+             ) : reviews.length === 0 ? (
+                <Text style={styles.emptyText}>Seja o primeiro a avaliar.</Text>
+             ) : (
+                reviews.map((rev) => (
+                   <View key={rev.id} style={styles.reviewItem}>
+                      <View style={styles.reviewHeader}>
+                          {/* MOSTRA O NOME DO USUÁRIO OU "Anônimo" */}
+                          <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                              <View style={styles.avatarPlaceholder}>
+                                  <Text style={styles.avatarInitial}>
+                                      {(rev.userName || "U").charAt(0).toUpperCase()}
+                                  </Text>
+                              </View>
+                              <Text style={styles.reviewUser}>
+                                  {rev.userName || "Usuário MovieMu"}
+                              </Text>
+                          </View>
+                          
+                          <View style={styles.starsRow}>
+                              <Ionicons name="star" size={14} color="#FFD700" />
+                              <Text style={styles.starText}>{rev.rating}</Text>
+                          </View>
+                      </View>
+                      <Text style={styles.reviewComment}>"{rev.comment}"</Text>
+                   </View>
+                ))
+             )}
+          </View>
+
+          <View style={{height: 100}} />
+        </View>
+      </Animated.ScrollView>
+    </View>
   );
 };
-
-export default DetalhesScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#222',
-  },
-  customHeader: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  backButton: {
-    padding: 5,
-  },
-  scrollContent: {
-    padding: 20,
-    alignItems: 'center',
-    paddingBottom: 100, // Garante que o botão fixo não sobreponha o conteúdo
+    backgroundColor: '#000', // Fundo Preto Absoluto
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
   },
-  loadingText: {
-    marginTop: 10,
-    color: '#fff',
+  
+  // Imagem
+  heroImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: width,
+    height: 550,
   },
-  poster: {
-    width: 300,
-    height: 450,
-    borderRadius: 10,
-    marginBottom: 20,
+  heroGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: width,
+    height: 550,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  releaseDate: {
-    fontSize: 16,
-    color: '#ccc',
-    marginBottom: 10,
-  },
-  overview: {
-    fontSize: 16,
-    color: '#ddd',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  streamingSection: {
-    width: '100%',
-    marginBottom: 20,
+  backButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    left: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(30,30,30,0.7)', // Cinza escuro translúcido
+    justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
-  streamingTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  infoContainer: {
+    paddingHorizontal: 20,
+    backgroundColor: '#000', // Conteúdo sobre o preto
+    minHeight: 500,
+  },
+
+  // Cabeçalho Info
+  title: {
     color: '#fff',
-    marginBottom: 10,
+    fontSize: 34,
+    fontWeight: '800', // Fonte grossa estilo Netflix
+    marginBottom: 15,
+    letterSpacing: -0.5,
   },
-  providersContainer: {
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  matchBadge: {
+    backgroundColor: '#fff', // Badge Branco (Alto contraste)
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  matchText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  metaText: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  hdBadge: {
+    borderWidth: 1,
+    borderColor: '#666',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+  },
+  hdText: {
+    color: '#ccc',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  // Ação Principal
+  mainActionButton: {
+    backgroundColor: '#fff', // Botão Branco estilo Apple TV
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  mainActionText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+
+  overviewText: {
+    color: '#ccc', // Cinza claro para leitura
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 15,
+  },
+  genresRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'center',
+    marginBottom: 30,
   },
-  providerButton: {
-    backgroundColor: '#444',
-    padding: 10,
-    borderRadius: 8,
-    margin: 5,
-    alignItems: 'center',
+  genreText: {
+    color: '#888',
+    fontSize: 13,
+    marginRight: 6,
+  },
+
+  // Seções
+  sectionMargin: {
+    marginTop: 20,
+    marginBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#222', // Divisor sutil
+    paddingTop: 20,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 15,
+  },
+  
+  // Streaming
+  providersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  providerItem: {
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   providerLogo: {
-    width: 50,
-    height: 50,
-    resizeMode: 'contain',
+    width: 45,
+    height: 45,
   },
-  providerName: {
+  emptyText: {
+    color: '#666',
+    fontStyle: 'italic',
+  },
+
+  // Reviews Sóbrios (Estilo HBO)
+  reviewItem: {
+    backgroundColor: '#111', // Card muito escuro
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#222'
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  avatarPlaceholder: {
+      width: 24, height: 24, borderRadius: 12,
+      backgroundColor: '#333', justifyContent: 'center', alignItems: 'center'
+  },
+  avatarInitial: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  reviewUser: {
     color: '#fff',
+    fontWeight: 'bold',
     fontSize: 14,
   },
-  noProvidersText: {
-    color: '#aaa',
-    fontStyle: 'italic',
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 6, gap: 4,
   },
-  reviewSection: {
-    width: '100%',
-    marginTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#555',
-    paddingTop: 16,
-  },
-  reviewSectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  starText: {
     color: '#fff',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  noReviewsText: {
-    fontStyle: 'italic',
-    color: '#aaa',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  reviewItem: {
-    width: '100%',
-    marginBottom: 12,
-    padding: 10,
-    backgroundColor: '#333',
-    borderRadius: 6,
-  },
-  reviewRating: {
     fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+    fontSize: 12,
   },
   reviewComment: {
-    fontStyle: 'italic',
-    color: '#ddd',
-  },
-  reviewButtonFixed: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    backgroundColor: '#f44336',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: '#ccc',
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
+
+export default DetalhesScreen;

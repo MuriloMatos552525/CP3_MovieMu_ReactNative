@@ -1,38 +1,57 @@
-// App.tsx
 import React from 'react';
+import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { 
+  createStackNavigator, 
+  CardStyleInterpolators, 
+  TransitionSpecs 
+} from '@react-navigation/stack';
 
-// Importação das telas
+// --- IMPORTAÇÃO DAS TELAS ---
+
+// Autenticação
 import LoginScreen from './src/telas/LoginScreen';
 import CadastroScreen from './src/telas/CadastroScreen';
-import TelaInicial from './src/telas/TelaInicial';
+
+// Navegador Principal (Barra de Abas)
+import MainTabNavigator from './src/navigation/MainTabNavigator';
+
+// Telas Secundárias
 import PesquisaScreen from './src/telas/PesquisaScreen';
 import DetalhesScreen from './src/telas/DetalhesScreen';
 import FavoritosScreen from './src/telas/FavoritosScreen';
 import DesenvolvedoresScreen from './src/telas/DesenvolvedoresScreen';
 import ReviewScreen from './src/telas/ReviewScreen';
+
+// --- TELAS DE SOCIAL E LISTAS ---
 import SharedListsScreen from './src/telas/SharedListsScreen';
 import CreateSharedListScreen from './src/telas/CreateSharedListScreen';
 import SharedListDetailScreen from './src/telas/SharedListDetailScreen';
+import FriendsScreen from './src/telas/FriendsScreen';
+import ReviewsHistoryScreen from './src/telas/ReviewsHistoryScreen'; // <--- NOVA IMPORTAÇÃO
 
-// Importação da sua nova tela de Perfil
-import PerfilScreen from './src/telas/PerfilScreen';
-
-// Definindo os tipos para as rotas
+// --- TIPAGEM DAS ROTAS ---
 export type RootStackParamList = {
+  // Fluxo de Auth
   Login: undefined;
   Cadastro: undefined;
-  TelaInicial: undefined;
+  
+  // Fluxo Principal
+  MainTab: undefined; 
+  
+  // Telas Avulsas
   Pesquisa: undefined;
   Detalhes: { movieId: number };
   Favoritos: undefined;
   Desenvolvedores: undefined;
-  Review: { movieId: number };
+  Review: { movieId: number; movieTitle?: string; moviePoster?: string };
+  
+  // Novas Rotas Sociais
   SharedLists: undefined;
   CreateSharedList: undefined;
   SharedListDetail: { listId: string; listName: string };
-  Perfil: undefined; // <= Adicione esta rota para o Perfil
+  Friends: undefined;
+  ReviewsHistory: undefined; // <--- NOVA ROTA ADICIONADA
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -40,71 +59,108 @@ const Stack = createStackNavigator<RootStackParamList>();
 const App: React.FC = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator>
-        {/* Tela de login sem cabeçalho */}
+      {/* StatusBar clara para contrastar com o fundo preto absoluto */}
+      <StatusBar style="light" backgroundColor="#000" />
+      
+      <Stack.Navigator
+        initialRouteName="Login"
+        screenOptions={{
+          // 1. Removemos o header nativo globalmente (controle total do design)
+          headerShown: false,
+          
+          // 2. Fundo preto para evitar flashes brancos na transição (Visual Premium)
+          cardStyle: { backgroundColor: '#000' },
+          
+          // 3. Gestos nativos do iOS/Android
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+
+          // 4. Física de Transição (Mola/Spring estilo iOS)
+          transitionSpec: {
+            open: TransitionSpecs.TransitionIOSSpec,
+            close: TransitionSpecs.TransitionIOSSpec,
+          },
+
+          // 5. Animação de Slide Lateral (Padrão de Apps de Streaming)
+          cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
+        }}
+      >
+        {/* --- GRUPO 1: AUTENTICAÇÃO --- */}
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Cadastro" component={CadastroScreen} />
+
+        {/* --- GRUPO 2: NAVEGAÇÃO PRINCIPAL (ABAS) --- */}
+        <Stack.Screen name="MainTab" component={MainTabNavigator} />
+        
+        {/* --- GRUPO 3: TELAS MODAIS E DETALHES --- */}
+        
+        {/* Pesquisa: Fade suave (Melhor para buscas) */}
         <Stack.Screen 
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Cadastro"
-          component={CadastroScreen}
-          options={{ title: 'Cadastro' }}
-        />
-        <Stack.Screen 
-          name="TelaInicial"
-          component={TelaInicial}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Pesquisa"
+          name="Pesquisa" 
           component={PesquisaScreen}
-          options={{ headerShown: false }}
+          options={{
+            cardStyleInterpolator: CardStyleInterpolators.forFadeFromBottomAndroid,
+          }}
         />
+        
+        {/* Detalhes do Filme */}
+        <Stack.Screen name="Detalhes" component={DetalhesScreen} />
+        
+        {/* --- ROTAS DE SOCIAL, LISTAS E HISTÓRICO --- */}
+        
+        {/* Listas */}
+        <Stack.Screen name="SharedLists" component={SharedListsScreen} />
+        <Stack.Screen name="SharedListDetail" component={SharedListDetailScreen} />
+        
+        {/* Criar Lista (Modal) */}
         <Stack.Screen 
-          name="Detalhes"
-          component={DetalhesScreen}
-          options={{ title: 'Detalhes do Filme' }}
-        />
-        <Stack.Screen 
-          name="Favoritos"
-          component={FavoritosScreen}
-          options={{ title: 'Filmes Favoritos' }}
-        />
-        <Stack.Screen 
-          name="Desenvolvedores"
-          component={DesenvolvedoresScreen}
-          options={{ title: 'Desenvolvedores' }}
-        />
-        {/* Novos fluxos */}
-        <Stack.Screen 
-          name="Review"
-          component={ReviewScreen}
-          options={{ title: 'Avaliações' }}
-        />
-        <Stack.Screen 
-          name="SharedLists"
-          component={SharedListsScreen}
-          options={{ title: 'Listas Compartilhadas' }}
-        />
-        <Stack.Screen 
-          name="CreateSharedList"
+          name="CreateSharedList" 
           component={CreateSharedListScreen}
-          options={{ title: 'Criar Lista Compartilhada' }}
+          options={{ 
+             presentation: 'modal',
+             cardStyleInterpolator: CardStyleInterpolators.forModalPresentationIOS
+          }}
         />
+        
+        {/* Amigos */}
+        <Stack.Screen name="Friends" component={FriendsScreen} />
+
+        {/* Histórico de Reviews (NOVO) */}
+        <Stack.Screen name="ReviewsHistory" component={ReviewsHistoryScreen} />
+
+        {/* Review - Avaliar Filme (Modal) */}
         <Stack.Screen 
-          name="SharedListDetail"
-          component={SharedListDetailScreen}
-          options={{ title: 'Detalhes da Lista' }}
+          name="Review" 
+          component={ReviewScreen}
+          options={{ 
+            presentation: 'modal', 
+            cardStyleInterpolator: CardStyleInterpolators.forModalPresentationIOS 
+          }}
         />
 
-        {/* Rota para a Tela de Perfil */}
-        <Stack.Screen
-          name="Perfil"
-          component={PerfilScreen}
-          options={{ title: 'Meu Perfil' }}
+        {/* Telas Secundárias (Com Header Nativo Escuro para contraste) */}
+        <Stack.Screen 
+          name="Favoritos" 
+          component={FavoritosScreen}
+          options={{ 
+            headerShown: true, 
+            title: 'Meus Favoritos', 
+            headerStyle: { backgroundColor: '#000', borderBottomColor: '#333', borderBottomWidth: 1 }, 
+            headerTintColor: '#fff' 
+          }} 
         />
+        
+        <Stack.Screen 
+          name="Desenvolvedores" 
+          component={DesenvolvedoresScreen}
+          options={{ 
+            headerShown: true, 
+            title: 'Sobre', 
+            headerStyle: { backgroundColor: '#000', borderBottomColor: '#333', borderBottomWidth: 1 }, 
+            headerTintColor: '#fff' 
+          }}
+        />
+        
       </Stack.Navigator>
     </NavigationContainer>
   );

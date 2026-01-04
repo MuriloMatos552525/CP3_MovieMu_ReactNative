@@ -14,38 +14,43 @@ import {
   orderBy,
   limit,
   setDoc,
+  arrayUnion,
+  arrayRemove
 } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
-/** 
- * Tipos de Dados 
+/** * ==========================================
+ * DATA TYPES (INTERFACES)
+ * ==========================================
  */
 
-// Avaliações
+// Reviews
 export interface Review {
   id: string;
   movieId: number;
   userId: string;
+  userName?: string; // Snapshot for display
+  userPhoto?: string | null; // Snapshot for display
   rating: number;
   comment: string;
   createdAt?: any;
   updatedAt?: any;
 }
 
-// Listas Compartilhadas
+// Shared Lists
 export interface SharedList {
   id: string;
   creatorId: string;
   listName: string;
+  isShared: boolean; // True = Public/Shared via Link, False = Private
   allowOthersToAdd: boolean;
   participants: string[];
   createdAt?: any;
 }
 
-// Filmes em Listas Compartilhadas
-// Agora o TMDb id será armazenado em "tmdbId"
+// Movies in Shared Lists
 export interface SharedMovie {
-  id: string; // Esse será o ID gerado pelo Firestore
+  id: string; 
   tmdbId?: number;
   title: string;
   poster_path?: string;
@@ -55,38 +60,523 @@ export interface SharedMovie {
   watchedAt?: any;
 }
 
-// Perfil de Usuário
+// Full User Profile
 export interface UserProfile {
-  displayName?: string;
+  uid: string;
+  email: string;
+  username: string;     // Ex: @joaosilva (Unique)
+  fullName: string;     // Ex: João Silva
+  displayName?: string; // Compatibility with Auth
   photoURL?: string;
+  bio?: string;
   friends?: string[];
+  top5?: {
+    [pos: number]: {
+      id: number;
+      title: string;
+      poster_path?: string;
+    };
+  };
+  lastUsernameChange?: any;
   createdAt?: any;
   updatedAt?: any;
-  bio?: string; // <-- novo campo
 }
 
-
-/** 
- * Funções de Avaliações e Comentários 
+/** * ==========================================
+ * USER MANAGEMENT (AUTH & PROFILE)
+ * ==========================================
  */
 
-export const addReview = async (
-  movieId: number,
-  userId: string,
-  rating: number,
-  comment: string
+// 1. Check if username exists (for registration/update)
+export const checkUsernameExists = async (username: string): Promise<boolean> => {
+  try {
+    const normalized = username.toLowerCase().trim();
+    const q = query(collection(db, "users"), where("username", "==", normalized));
+    const snapshot = await getDocs(q);
+    return !snapshot.empty;
+  } catch (error) {
+    console.error("Error verifying username:", error);
+    throw error;
+  }
+};
+
+// 2. Create User in Firestore (post-Auth registration)
+export const createUserInFirestore = async (uid: string, data: {
+  email: string;
+  username: string;
+  fullName: string;
+}) => {
+  try {
+    await setDoc(doc(db, "users", uid), {
+      uid,
+      email: data.email,
+      username: data.username.toLowerCase().trim(),
+      fullName: data.fullName,
+      displayName: data.fullName,
+      photoURL: null,
+      bio: "New to MovieMu",
+      friends: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Error saving user:", error);
+    throw error;
+  }
+};
+
+// 3. Get Full Profile
+export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
+  try {
+    const userRef = doc(db, "users", userId);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      return snap.data() as UserProfile;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+    throw error;
+  }
+};
+
+// 4. Update Profile (Bio, Photo, Name)
+export const createOrUpdateUserDoc = async (userId: string, data: Partial<UserProfile>) => {
+  try {
+    await setDoc(doc(db, "users", userId), {
+        ...data,
+        updatedAt: serverTimestamp(),
+      }, { merge: true }
+    );
+  } catch (error) {
+    console.error("Error updating user:", error);
+    throw error;
+  }
+};
+
+/** * ==========================================
+ * FRIEND SYSTEM (REQUESTS & ACCEPTANCE)
+ * ==========================================
+ */
+
+// 1. Search user by USERNAME (@username)
+export const searchUserByUsername = async (queryText: string) => {
+  try {
+    const term = queryText.toLowerCase().trim();
+    const usersRef = collection(db, "users");
+    // Exact match for username
+    const q = query(usersRef, where("username", "==", term));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return null;
+    
+    const userDoc = querySnapshot.docs[0];
+    return { uid: userDoc.id, ...userDoc.data() };
+  } catch (error) {
+    console.error("Error searching user by username:", error);
+    throw error;
+  }
+};
+
+// 2. Send Friend Request
+export const sendFriendRequest = async (currentUserId: string, currentUserData: any, friendId: string, friendData: any) => {
+  try {
+    // Save to FRIEND's collection as "received"
+    await setDoc(doc(db, "users", friendId, "friendRequests", currentUserId), {
+      uid: currentUserId,
+      displayName: currentUserData.fullName || currentUserData.displayName,
+      username: currentUserData.username,
+      photoURL: currentUserData.photoURL || null,
+      status: 'received',
+      timestamp: serverTimestamp()
+    });
+
+    // Save to MY collection as "sent"
+    await setDoc(doc(db, "users", currentUserId, "friendRequests", friendId), {
+      uid: friendId,
+      displayName: friendData.fullName || friendData.displayName,
+      username: friendData.username,
+      photoURL: friendData.photoURL || null,
+      status: 'sent',
+      timestamp: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Error sending friend request:", error);
+    throw error;
+  }
+};
+
+// 3. Accept Friend Request
+export const acceptFriendRequest = async (currentUserId: string, currentUserData: any, friendId: string, friendData: any) => {
+  try {
+    // Add to BOTH friends lists (Subcollection)
+    // 3a. Add Him to My Friends
+    await setDoc(doc(db, "users", currentUserId, "friends", friendId), {
+      uid: friendId,
+      displayName: friendData.displayName || friendData.fullName || "User",
+      username: friendData.username,
+      photoURL: friendData.photoURL || null,
+      addedAt: serverTimestamp()
+    });
+
+    // 3b. Add Me to His Friends
+    await setDoc(doc(db, "users", friendId, "friends", currentUserId), {
+      uid: currentUserId,
+      displayName: currentUserData.displayName || currentUserData.fullName || "User",
+      username: currentUserData.username,
+      photoURL: currentUserData.photoURL || null,
+      addedAt: serverTimestamp()
+    });
+
+    // Remove requests
+    await deleteDoc(doc(db, "users", currentUserId, "friendRequests", friendId));
+    await deleteDoc(doc(db, "users", friendId, "friendRequests", currentUserId));
+  } catch (error) {
+    console.error("Error accepting friend request:", error);
+    throw error;
+  }
+};
+
+// 4. Reject/Cancel Request
+export const rejectFriendRequest = async (currentUserId: string, friendId: string) => {
+  try {
+    await deleteDoc(doc(db, "users", currentUserId, "friendRequests", friendId));
+    await deleteDoc(doc(db, "users", friendId, "friendRequests", currentUserId));
+  } catch (error) {
+    console.error("Error rejecting request:", error);
+    throw error;
+  }
+};
+
+// 5. Get Friend Requests (Received)
+export const getFriendRequests = async (userId: string) => {
+  try {
+    const q = query(
+        collection(db, "users", userId, "friendRequests"),
+        where("status", "==", "received")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data());
+  } catch (error) {
+    console.error("Error fetching friend requests:", error);
+    throw error;
+  }
+};
+
+// 6. List My Friends
+export const getMyFriends = async (userId: string) => {
+  try {
+    const q = collection(db, "users", userId, "friends");
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data());
+  } catch (error) {
+    console.error("Error fetching friends:", error);
+    throw error;
+  }
+};
+
+// 7. Remove Friend
+export const removeFriend = async (currentUserId: string, friendId: string) => {
+  try {
+    await deleteDoc(doc(db, "users", currentUserId, "friends", friendId));
+    // Optional: Remove me from his friends too (if you want symmetric friendship)
+    // await deleteDoc(doc(db, "users", friendId, "friends", currentUserId));
+  } catch (error) {
+    console.error("Error removing friend:", error);
+    throw error;
+  }
+};
+
+/** * ==========================================
+ * SHARED & PRIVATE LISTS
+ * ==========================================
+ */
+
+// 1. Create List
+export const createSharedList = async (
+  creatorId: string,
+  listName: string,
+  isShared: boolean = true 
 ): Promise<string> => {
   try {
+    const listRef = await addDoc(collection(db, "sharedLists"), {
+      creatorId,
+      listName,
+      isShared, 
+      allowOthersToAdd: isShared, 
+      participants: [creatorId],
+      createdAt: serverTimestamp(),
+    });
+    return listRef.id;
+  } catch (error) {
+    console.error("Error creating list:", error);
+    throw error;
+  }
+};
+
+// 2. Get User Lists (Participant or Creator)
+export const getSharedListsByUser = async (userId: string): Promise<SharedList[]> => {
+  try {
+    const qLists = query(
+      collection(db, "sharedLists"),
+      where("participants", "array-contains", userId)
+    );
+    const querySnapshot = await getDocs(qLists);
+    const lists: SharedList[] = [];
+    querySnapshot.forEach((docSnap) => {
+      lists.push({ id: docSnap.id, ...docSnap.data() } as SharedList);
+    });
+    return lists;
+  } catch (error) {
+    console.error("Error fetching lists:", error);
+    throw error;
+  }
+};
+
+// 3. Join List (by Code/ID)
+export const joinSharedList = async (listId: string, userId: string) => {
+  try {
+    const listRef = doc(db, 'sharedLists', listId);
+    
+    // Check if exists
+    const listSnap = await getDoc(listRef);
+    if (!listSnap.exists()) {
+      throw new Error("List not found.");
+    }
+    
+    // Add to participants array (without duplication)
+    await updateDoc(listRef, {
+        participants: arrayUnion(userId)
+    });
+  } catch (error) {
+    console.error("Error joining list:", error);
+    throw error;
+  }
+};
+
+// 3b. Add Multiple Friends to List (New Feature)
+export const addFriendsToSharedList = async (listId: string, friendIds: string[]) => {
+  try {
+    if (!friendIds.length) return;
+    const listRef = doc(db, 'sharedLists', listId);
+    
+    await updateDoc(listRef, {
+      participants: arrayUnion(...friendIds)
+    });
+  } catch (error) {
+    console.error("Error adding friends to list:", error);
+    throw error;
+  }
+};
+
+// 4. Add Movie to List
+export const addMovieToSharedList = async (
+  listId: string,
+  userId: string,
+  movie: { title: string; poster_path?: string; tmdbId?: number }
+): Promise<string> => {
+  try {
+    const listRef = doc(db, "sharedLists", listId);
+    const listSnap = await getDoc(listRef);
+    if (!listSnap.exists()) throw new Error("List does not exist.");
+    
+    const listData = listSnap.data() as SharedList;
+    
+    // Permission: Creator OR (Allowed && Participant)
+    if (
+      userId === listData.creatorId ||
+      (listData.allowOthersToAdd && listData.participants.includes(userId))
+    ) {
+      const moviesCollectionRef = collection(listRef, "movies");
+      const movieDoc = await addDoc(moviesCollectionRef, {
+        ...movie,
+        addedBy: userId,
+        addedAt: serverTimestamp(),
+        watched: false,
+      });
+      return movieDoc.id;
+    } else {
+      throw new Error("No permission to add movies.");
+    }
+  } catch (error) {
+    console.error("Error adding movie:", error);
+    throw error;
+  }
+};
+
+// 5. Get Movies from List
+export const getMoviesFromSharedList = async (listId: string): Promise<SharedMovie[]> => {
+  try {
+    const listRef = doc(db, "sharedLists", listId);
+    const moviesCollectionRef = collection(listRef, "movies");
+    const querySnapshot = await getDocs(moviesCollectionRef);
+    const movies: SharedMovie[] = [];
+    querySnapshot.forEach((docSnap) => {
+      movies.push({ id: docSnap.id, ...docSnap.data() } as SharedMovie);
+    });
+    return movies;
+  } catch (error) {
+    console.error("Error fetching movies:", error);
+    throw error;
+  }
+};
+
+// 6. Remove Movie
+export const removeMovieFromSharedList = async (listId: string, movieId: string): Promise<void> => {
+  try {
+    const moviesCollectionRef = collection(db, "sharedLists", listId, "movies");
+    const movieDocRef = doc(moviesCollectionRef, movieId);
+    await deleteDoc(movieDocRef);
+  } catch (error) {
+    console.error("Error removing movie:", error);
+    throw error;
+  }
+};
+
+// 7. Mark as Watched
+export const markMovieAsWatchedInSharedList = async (listId: string, movieId: string): Promise<void> => {
+  try {
+    const moviesCollectionRef = collection(db, "sharedLists", listId, "movies");
+    const movieDocRef = doc(moviesCollectionRef, movieId);
+    await updateDoc(movieDocRef, {
+      watched: true,
+      watchedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Error marking as watched:", error);
+    throw error;
+  }
+};
+
+/** * ==========================================
+ * TOP 5 & FAVORITES
+ * ==========================================
+ */
+
+export const setTop5Movie = async (userId: string, position: number, movie: any) => {
+  try {
+    // Saves inside a "top5" map in user doc: { 1: movie, 2: movie... }
+    await setDoc(doc(db, "users", userId), {
+      top5: {
+        [position]: movie
+      }
+    }, { merge: true });
+  } catch (error) {
+    console.error("Error saving Top 5:", error);
+    throw error;
+  }
+};
+
+export const addFavoriteMovie = async (
+  userId: string,
+  movieDetails: { id?: string; poster_path?: string; title: string }
+): Promise<string> => {
+  try {
+    const favRef = await addDoc(collection(db, "favorites"), {
+      userId,
+      ...movieDetails,
+      createdAt: serverTimestamp(),
+    });
+    return favRef.id;
+  } catch (error) {
+    console.error("Error adding favorite:", error);
+    throw error;
+  }
+};
+
+export const getFavoriteMovies = async (userId: string) => {
+  try {
+    const qFavs = query(collection(db, "favorites"), where("userId", "==", userId));
+    const querySnapshot = await getDocs(qFavs);
+    const movies: any[] = [];
+    querySnapshot.forEach((docSnap) => {
+      movies.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return movies;
+  } catch (error) {
+    console.error("Error fetching favorites:", error);
+    throw error;
+  }
+};
+
+export const removeFavoriteMovie = async (docId: string) => {
+  try {
+    await deleteDoc(doc(db, "favorites", docId));
+  } catch (error) {
+    console.error("Error removing favorite:", error);
+    throw error;
+  }
+};
+
+/** * ==========================================
+ * REVIEWS (SOCIAL FEED)
+ * ==========================================
+ */
+
+export const addReview = async (movieId: number, userId: string, rating: number, comment: string): Promise<string> => {
+  try {
+    // 1. Get current user data to snapshot name/photo
+    const userDocRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userDocRef);
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    
+    // Fallback to "User" if no name set
+    const userName = userData.displayName || userData.fullName || "User";
+    const userPhoto = userData.photoURL || null;
+
+    // 2. Save review with user snapshot
     const reviewRef = await addDoc(collection(db, "reviews"), {
       movieId,
       userId,
+      userName, // Important for display
+      userPhoto, // Important for display
       rating,
       comment,
       createdAt: serverTimestamp(),
     });
     return reviewRef.id;
   } catch (error) {
-    console.error("Erro ao adicionar avaliação:", error);
+    console.error("Error adding review:", error);
+    throw error;
+  }
+};
+
+export const getReviewsByMovie = async (movieId: number): Promise<Review[]> => {
+  try {
+    const qReviews = query(collection(db, "reviews"), where("movieId", "==", movieId));
+    const querySnapshot = await getDocs(qReviews);
+    const reviews: Review[] = [];
+    querySnapshot.forEach((docSnap) => {
+      reviews.push({ id: docSnap.id, ...docSnap.data() } as Review);
+    });
+    return reviews;
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+    throw error;
+  }
+};
+
+export const getReviewsByUser = async (userId: string): Promise<Review[]> => {
+  try {
+    const q = query(collection(db, "reviews"), where("userId", "==", userId));
+    const querySnapshot = await getDocs(q);
+    const userReviews: Review[] = [];
+    querySnapshot.forEach((docSnap) => {
+      userReviews.push({ id: docSnap.id, ...docSnap.data() } as Review);
+    });
+    return userReviews;
+  } catch (error) {
+    console.error("Error fetching user reviews:", error);
+    throw error;
+  }
+};
+
+export const deleteReview = async (reviewId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, "reviews", reviewId));
+  } catch (error) {
+    console.error("Error deleting review:", error);
     throw error;
   }
 };
@@ -104,308 +594,16 @@ export const updateReview = async (
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    console.error("Erro ao atualizar avaliação:", error);
+    console.error("Error updating review:", error);
     throw error;
   }
 };
 
-export const deleteReview = async (reviewId: string): Promise<void> => {
-  try {
-    await deleteDoc(doc(db, "reviews", reviewId));
-  } catch (error) {
-    console.error("Erro ao deletar avaliação:", error);
-    throw error;
-  }
-};
-
-export const getReviewsByMovie = async (
-  movieId: number
-): Promise<Review[]> => {
-  try {
-    const qReviews = query(
-      collection(db, "reviews"),
-      where("movieId", "==", movieId)
-    );
-    const querySnapshot = await getDocs(qReviews);
-    const reviews: Review[] = [];
-    querySnapshot.forEach((docSnap) => {
-      reviews.push({ id: docSnap.id, ...docSnap.data() } as Review);
-    });
-    return reviews;
-  } catch (error) {
-    console.error("Erro ao buscar avaliações do filme:", error);
-    throw error;
-  }
-};
-
-/** 
- * Funções de Listas Compartilhadas 
- */
-
-export const createSharedList = async (
-  creatorId: string,
-  listName: string,
-  allowOthersToAdd: boolean = false
-): Promise<string> => {
-  try {
-    const listRef = await addDoc(collection(db, "sharedLists"), {
-      creatorId,
-      listName,
-      allowOthersToAdd,
-      participants: [creatorId],
-      createdAt: serverTimestamp(),
-    });
-    return listRef.id;
-  } catch (error) {
-    console.error("Erro ao criar lista compartilhada:", error);
-    throw error;
-  }
-};
-
-export const getSharedListsByUser = async (
-  userId: string
-): Promise<SharedList[]> => {
-  try {
-    const qLists = query(
-      collection(db, "sharedLists"),
-      where("participants", "array-contains", userId)
-    );
-    const querySnapshot = await getDocs(qLists);
-    const lists: SharedList[] = [];
-    querySnapshot.forEach((docSnap) => {
-      lists.push({ id: docSnap.id, ...docSnap.data() } as SharedList);
-    });
-    return lists;
-  } catch (error) {
-    console.error("Erro ao buscar listas compartilhadas:", error);
-    throw error;
-  }
-};
-
-/**
- * Adiciona um filme à lista compartilhada (verificando permissões).
- * Agora, o TMDb id é armazenado no campo "tmdbId" em vez de "id".
- */
-export const addMovieToSharedList = async (
-  listId: string,
-  userId: string,
-  movie: { title: string; poster_path?: string; tmdbId?: number }
-): Promise<string> => {
-  try {
-    const listRef = doc(db, "sharedLists", listId);
-    const listSnap = await getDoc(listRef);
-    if (!listSnap.exists()) {
-      throw new Error("Lista compartilhada não existe.");
-    }
-    const listData = listSnap.data() as SharedList;
-    if (
-      userId === listData.creatorId ||
-      (listData.allowOthersToAdd && listData.participants.includes(userId))
-    ) {
-      const moviesCollectionRef = collection(listRef, "movies");
-      const movieDoc = await addDoc(moviesCollectionRef, {
-        ...movie,
-        addedBy: userId,
-        addedAt: serverTimestamp(),
-        watched: false,
-      });
-      return movieDoc.id;
-    } else {
-      throw new Error("Usuário não autorizado a adicionar filmes nessa lista.");
-    }
-  } catch (error) {
-    console.error("Erro ao adicionar filme à lista compartilhada:", error);
-    throw error;
-  }
-};
-
-export const getMoviesFromSharedList = async (
-  listId: string
-): Promise<SharedMovie[]> => {
-  try {
-    const listRef = doc(db, "sharedLists", listId);
-    const moviesCollectionRef = collection(listRef, "movies");
-    const querySnapshot = await getDocs(moviesCollectionRef);
-    const movies: SharedMovie[] = [];
-    querySnapshot.forEach((docSnap) => {
-      // Aqui garantimos que o "id" seja o ID do documento Firestore
-      movies.push({ id: docSnap.id, ...docSnap.data() } as SharedMovie);
-    });
-    return movies;
-  } catch (error) {
-    console.error("Erro ao buscar filmes da lista compartilhada:", error);
-    throw error;
-  }
-};
-
-/**
- * Remove um filme da lista compartilhada.
- * @param listId - ID da lista compartilhada.
- * @param movieId - ID do documento do filme na subcoleção "movies".
- */
-export const removeMovieFromSharedList = async (
-  listId: string,
-  movieId: string
-): Promise<void> => {
-  try {
-    const moviesCollectionRef = collection(db, "sharedLists", listId, "movies");
-    const movieDocRef = doc(moviesCollectionRef, movieId);
-    await deleteDoc(movieDocRef);
-  } catch (error) {
-    console.error("Erro ao remover filme da lista compartilhada:", error);
-    throw error;
-  }
-};
-
-/**
- * Marca um filme como assistido na lista compartilhada.
- * @param listId - ID da lista compartilhada.
- * @param movieId - ID do documento do filme na subcoleção "movies".
- */
-export const markMovieAsWatchedInSharedList = async (
-  listId: string,
-  movieId: string
-): Promise<void> => {
-  try {
-    const moviesCollectionRef = collection(db, "sharedLists", listId, "movies");
-    const movieDocRef = doc(moviesCollectionRef, movieId);
-    await updateDoc(movieDocRef, {
-      watched: true,
-      watchedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao marcar filme como assistido na lista compartilhada:", error);
-    throw error;
-  }
-};
-
-/** 
- * Funções de Favoritos 
- */
-
-export const addFavoriteMovie = async (
-  userId: string,
-  movieDetails: { id?: string; poster_path?: string; title: string }
-): Promise<string> => {
-  try {
-    const favRef = await addDoc(collection(db, "favorites"), {
-      userId,
-      ...movieDetails,
-      createdAt: serverTimestamp(),
-    });
-    return favRef.id;
-  } catch (error) {
-    console.error("Erro ao adicionar filme aos favoritos:", error);
-    throw error;
-  }
-};
-
-export const getFavoriteMovies = async (userId: string) => {
-  try {
-    const qFavs = query(
-      collection(db, "favorites"),
-      where("userId", "==", userId)
-    );
-    const querySnapshot = await getDocs(qFavs);
-    const movies: any[] = [];
-    querySnapshot.forEach((docSnap) => {
-      movies.push({ id: docSnap.id, ...docSnap.data() });
-    });
-    return movies;
-  } catch (error) {
-    console.error("Erro ao buscar filmes favoritos:", error);
-    throw error;
-  }
-};
-
-export const removeFavoriteMovie = async (docId: string) => {
-  try {
-    await deleteDoc(doc(db, "favorites", docId));
-  } catch (error) {
-    console.error("Erro ao remover filme favorito:", error);
-    throw error;
-  }
-};
-
-export const updateFavoriteMovie = async (
-  docId: string,
-  data: any
-): Promise<void> => {
-  try {
-    const favRef = doc(db, "favorites", docId);
-    await updateDoc(favRef, {
-      ...data,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao atualizar filme favorito:", error);
-    throw error;
-  }
-};
-
-/** 
- * Funções de Perfil do Usuário 
- */
-
-export const createOrUpdateUserDoc = async (
-  userId: string,
-  data: Partial<UserProfile>
-) => {
-  try {
-    await setDoc(
-      doc(db, "users", userId),
-      {
-        ...data,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  } catch (error) {
-    console.error("Erro ao criar/atualizar usuário:", error);
-    throw error;
-  }
-};
-
-export const getUserProfile = async (
-  userId: string
-): Promise<UserProfile | null> => {
-  try {
-    const userRef = doc(db, "users", userId);
-    const snap = await getDoc(userRef);
-    if (snap.exists()) {
-      return snap.data() as UserProfile;
-    } else {
-      return null;
-    }
-  } catch (error) {
-    console.error("Erro ao buscar perfil do usuário:", error);
-    throw error;
-  }
-};
-
-export const getReviewsByUser = async (
-  userId: string
-): Promise<Review[]> => {
-  try {
-    const q = query(collection(db, "reviews"), where("userId", "==", userId));
-    const querySnapshot = await getDocs(q);
-    const userReviews: Review[] = [];
-    querySnapshot.forEach((docSnap) => {
-      userReviews.push({ id: docSnap.id, ...docSnap.data() } as Review);
-    });
-    return userReviews;
-  } catch (error) {
-    console.error("Erro ao buscar reviews do usuário:", error);
-    throw error;
-  }
-};
-
-
-export const getFriendsLastReviews = async (
-  friendIds: string[]
-): Promise<Review[]> => {
+export const getFriendsLastReviews = async (friendIds: string[]): Promise<Review[]> => {
   if (!friendIds || friendIds.length === 0) return [];
   try {
+    // Firestore limits 'in' operator to 10 values per query
+    // For MVP, we take the first 10. For production, you'd need multiple queries or a feed system.
     const q = query(
       collection(db, "reviews"),
       where("userId", "in", friendIds.slice(0, 10)),
@@ -419,8 +617,7 @@ export const getFriendsLastReviews = async (
     });
     return friendReviews;
   } catch (error) {
-    console.error("Erro ao buscar últimas reviews dos amigos:", error);
+    console.error("Error fetching friend reviews:", error);
     throw error;
   }
-  
 };
