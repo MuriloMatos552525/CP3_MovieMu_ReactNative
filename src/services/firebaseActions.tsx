@@ -17,7 +17,7 @@ import {
   arrayUnion,
   arrayRemove
 } from "firebase/firestore";
-import { db, auth } from "./firebaseConfig"; // Added 'auth' here
+import { db, auth } from "./firebaseConfig";
 
 /** ==========================================
  * DATA TYPES (INTERFACES)
@@ -802,4 +802,68 @@ export const getSwipedMovieIds = async (listId: string, sessionId: string) => {
     } catch (error) {
         return [];
     }
+};
+
+/** ==========================================
+ * MISSING FUNCTIONS (FROM SHARED LISTS SCREEN)
+ * ==========================================
+ */
+
+// 1. Sair de uma lista (Remover meu ID dos participantes)
+export const leaveSharedList = async (listId: string, userId: string) => {
+  try {
+    const listRef = doc(db, "sharedLists", listId);
+    await updateDoc(listRef, {
+      participants: arrayRemove(userId)
+    });
+  } catch (error) {
+    console.error("Error leaving list:", error);
+    throw error;
+  }
+};
+
+// 2. Deletar a lista inteira (Apenas criador)
+export const deleteSharedList = async (listId: string) => {
+  try {
+    // Note: In Firebase, deleting a document does not delete subcollections automatically.
+    // Ideally, a Cloud Function should clean up. For MVP, we delete the reference.
+    await deleteDoc(doc(db, "sharedLists", listId));
+  } catch (error) {
+    console.error("Error deleting list:", error);
+    throw error;
+  }
+};
+
+// 3. Find or Create One-on-One List (Avoid Duplicates)
+export const findOrCreateOneOnOneList = async (currentUserId: string, friendId: string, friendName: string, myName: string) => {
+  try {
+    // A. Fetch all my lists
+    const myLists = await getSharedListsByUser(currentUserId);
+
+    // B. Filter locally to find a list with ONLY me and the friend
+    const existingList = myLists.find(list => 
+      list.participants.length === 2 && 
+      list.participants.includes(friendId)
+    );
+
+    if (existingList) {
+      console.log("Existing list found:", existingList.id);
+      return existingList.id;
+    }
+
+    // C. If not found, create new
+    const listName = `Match: ${myName.split(' ')[0]} & ${friendName.split(' ')[0]}`;
+    console.log("Creating new list:", listName);
+    
+    const newListId = await createSharedList(currentUserId, listName, true);
+    
+    // Add friend immediately
+    await addFriendsToSharedList(newListId, [friendId]);
+    
+    return newListId;
+
+  } catch (error) {
+    console.error("Error managing 1x1 list:", error);
+    throw error;
+  }
 };
